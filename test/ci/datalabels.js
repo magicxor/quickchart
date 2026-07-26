@@ -85,6 +85,18 @@ describe('datalabels default formatter', () => {
     );
   });
 
+  it('skips a mis-shaped member and labels with the next one that reads', () => {
+    // An object where a number belongs must not become the label, but it must
+    // not suppress a member that does read either.
+    const feature = matchFeature('blr', 'Brest');
+    assert.strictEqual(
+      defaultFormatter({ feature, value: { n: 5 } }, context('choropleth')),
+      'Brest',
+    );
+    assert.strictEqual(defaultFormatter({ label: { ru: 'Кошки' }, y: 3 }, context('bar')), '3');
+    assert.strictEqual(defaultFormatter({ label: {}, value: {} }, context('bubbleMap')), null);
+  });
+
   it('skips members that have no text form, rather than throwing on them', () => {
     // A JS config can hold anything; a symbol throws when concatenated, and a
     // function would print its whole source.
@@ -99,6 +111,10 @@ describe('datalabels default formatter', () => {
       { feature: matchFeature('blr', 'Minsk'), value: 1471 },
       { x: 1, y: 2 },
       { longitude: 1, latitude: 2, value: 3 },
+      // Mis-shaped rows: data is whatever the caller sent.
+      { feature: matchFeature('blr', 'Minsk'), value: { n: 5 } },
+      { label: { ru: 'Кошки' }, y: 3 },
+      { label: {}, value: {}, x: {}, y: {} },
     ];
     ['choropleth', 'bubbleMap', 'line', 'bar'].forEach((type) => {
       rows.forEach((row) => {
