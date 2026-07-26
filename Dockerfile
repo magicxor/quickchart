@@ -1,26 +1,26 @@
-FROM node:18-alpine3.17
+FROM node:26-alpine
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 WORKDIR /quickchart
 
-RUN apk add --upgrade apk-tools
-RUN apk add --no-cache --virtual .build-deps yarn git build-base g++ python3
-RUN apk add --no-cache --virtual .npm-deps cairo-dev pango-dev libjpeg-turbo-dev librsvg-dev
-RUN apk add --no-cache --virtual .fonts libmount ttf-dejavu ttf-droid ttf-freefont ttf-liberation font-noto font-noto-emoji fontconfig
-RUN apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/community font-wqy-zenhei
-RUN apk add --no-cache libimagequant-dev
-RUN apk add --no-cache vips-dev
-RUN apk add --no-cache --virtual .runtime-deps graphviz
+# Build chain for node-canvas (no musl prebuilds - compiles from source).
+RUN apk add --no-cache --virtual .build-deps \
+    build-base g++ python3 pkgconf \
+    cairo-dev pango-dev libjpeg-turbo-dev giflib-dev librsvg-dev pixman-dev
+# Runtime shared libraries and fonts.
+RUN apk add --no-cache \
+    cairo pango libjpeg-turbo giflib librsvg pixman fontconfig libmount \
+    ttf-dejavu ttf-droid ttf-freefont ttf-liberation font-noto font-noto-emoji
+RUN apk add --no-cache font-wqy-zenhei \
+    || apk add --no-cache --repository https://dl-cdn.alpinelinux.org/alpine/edge/community font-wqy-zenhei
 
-COPY package*.json .
-COPY yarn.lock .
-RUN yarn install --production
+# The postinstall hook (scripts/patch-upsetjs-venn.js) must be present for npm ci.
+COPY package.json package-lock.json ./
+COPY scripts/patch-upsetjs-venn.js scripts/
+RUN npm ci --omit=dev && npm cache clean --force
 
-RUN apk update
-RUN rm -rf /var/cache/apk/* && \
-    rm -rf /tmp/*
-RUN apk del .build-deps
+RUN apk del .build-deps && rm -rf /var/cache/apk/* /tmp/*
 
 COPY *.js ./
 COPY lib/*.js lib/

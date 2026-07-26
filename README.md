@@ -1,22 +1,15 @@
 QuickChart
 ---
-[![Build Status](https://api.travis-ci.com/typpo/quickchart.svg?branch=master)](https://travis-ci.com/typpo/quickchart)
 
 [QuickChart](https://quickchart.io/) is a service that generates images of charts from a URL.  Because these charts are simple images, they are very easy to embed in non-dynamic environments such as email, SMS, chat rooms, and so on.
+
+> **Note:** This fork is modernized to run on a single, current [Chart.js 4](https://www.chartjs.org/) with the full suite of [sgratzl chart.js plugins](https://github.com/sgratzl). It intentionally drops legacy Chart.js 2/3 rendering, the Google Image Charts compatibility endpoints, and Graphviz. See [Differences from upstream](#differences-from-upstream).
 
 ## See it in action
 
 The chart image generation service is available online at [QuickChart.io](https://quickchart.io/).  There is an interactive editor that allows you to adjust inputs and build images.
 
-Here's an example chart that is defined completely by its URL:
-
-<img src="https://quickchart.io/chart?bkg=white&c=%7Btype%3A%27bar%27%2Cdata%3A%7Blabels%3A%5B%27January%27%2C%27February%27%2C%27March%27%2C%27April%27%2C%27May%27%5D%2Cdatasets%3A%5B%7Blabel%3A%27Dogs%27%2Cdata%3A%5B50%2C60%2C70%2C180%2C190%5D%7D%2C%7Blabel%3A%27Cats%27%2Cdata%3A%5B100%2C200%2C300%2C400%2C500%5D%7D%5D%7D%7D" width="500" />
-
-The above image can be included anywhere you like.  Here is its URL:
-
-[https://quickchart.io/chart?width=500&height=300&c={type:'bar',data:{labels:['January','February','March','April','May'],datasets:[{label:'Dogs',data:[50,60,70,180,190]},{label:'Cats',data:[100,200,300,400,500]}]}}](https://quickchart.io/chart?width=500&height=300&c={type:'bar',data:{labels:['January','February','March','April','May'],datasets:[{label:'Dogs',data:[50,60,70,180,190]},{label:'Cats',data:[100,200,300,400,500]}]}})
-
-As you can see, the Javascript or JSON object contained in the URL defines the chart:
+A chart is defined completely by its URL or by the JSON body of a `POST /chart` request:
 
 ```js
 {
@@ -34,19 +27,53 @@ As you can see, the Javascript or JSON object contained in the URL defines the c
 }
 ```
 
-**Go to  the full [QuickChart documentation](https://quickchart.io/documentation) to learn more.  See [gallery](https://quickchart.io/gallery/) for examples.**
+**Go to the full [QuickChart documentation](https://quickchart.io/documentation) to learn more.  See [gallery](https://quickchart.io/gallery/) for examples.**
+
+## API
+
+`GET /chart` and `POST /chart` accept the following parameters (query parameters for GET, JSON or form body fields for POST):
+
+| Parameter | Alias | Description |
+|---|---|---|
+| `chart` | `c` | Chart.js 4 config, as JSON or a Javascript object literal (required) |
+| `width` | `w` | Image width in logical pixels (default 500) |
+| `height` | `h` | Image height in logical pixels (default 300) |
+| `backgroundColor` | `bkg` | Canvas background color (default transparent) |
+| `devicePixelRatio` | | Pixel density multiplier, output is `width*ratio` x `height*ratio` (default 2, must be > 0 and <= 4) |
+| `format` | `f` | `png` (default), `svg`, or `pdf` |
+| `encoding` | | `url` (default) or `base64` for the `chart` parameter |
+| `version` | `v` | **Deprecated.** Accepted for backwards compatibility but ignored; charts always render with the bundled Chart.js 4.  Requests using it receive an `X-quickchart-deprecation` response header |
+
+Invalid requests (missing or malformed chart config, out-of-range sizes, unknown chart types, unsupported formats) return HTTP **400**; unexpected server failures return HTTP **500**.  In both cases the error message is rendered as an image (so broken embeds show the reason) and echoed in the `X-quickchart-error` response header.
 
 ## Configuring your chart
 
-The chart configuration object is based on the popular Chart.js API.  Check out the [Chart.js documentation](https://www.chartjs.org/docs/2.9.4/charts/) for more information on how to customize your chart, or see [QuickChart documentation](https://quickchart.io/documentation#parameters) for API options.
+The chart configuration object is based on the popular Chart.js API.  Check out the [Chart.js documentation](https://www.chartjs.org/docs/latest/) for more information on how to customize your chart, or see [QuickChart documentation](https://quickchart.io/documentation#parameters) for API options.
 
-QuickChart includes many Chart.js plugins that allow you to add chart annotations, data labels, and more: `chartjs-plugin-datalabels`, `chartjs-plugin-annotation`, `chartjs-plugin-piechart-outlabels`, `chartjs-chart-radial-gauge`, `chartjs-chart-box-and-violin-plot `, `chartjs-plugin-doughnutlabel`, and `chartjs-plugin-colorschemes`.
+**Configs must use Chart.js 4 syntax** (`options.scales.x`/`options.scales.y`, `options.plugins.legend`, `options.plugins.title`, and so on). Chart.js 2-style configs (`scales.xAxes`, top-level `legend`, `type: 'horizontalBar'`) are not translated.
 
-### Chart.js versions
+### Included chart plugins
 
-Chart.js v3 and v4 are supported via the `version` parameter ([documentation](https://quickchart.io/documentation/) to read more about parameters).  Custom chart plugins such as annotations and outlabels currently not available for >= 3.0.0.
+The following plugins are registered and ready to use:
 
-Each QuickChart instance should use 1 specific version of the Chart.js library.  Mixing and matching versions (e.g., rendering a v2 chart followed by a v3 chart) is not well supported.
+| Package | Chart types / features |
+|---|---|
+| [chartjs-plugin-annotation](https://github.com/chartjs/chartjs-plugin-annotation) | Line, box, ellipse, point, and label annotations via `options.plugins.annotation` |
+| [chartjs-plugin-datalabels](https://github.com/chartjs/chartjs-plugin-datalabels) | Data labels via `options.plugins.datalabels` (shown by default for pie/doughnut) |
+| [@sgratzl/chartjs-chart-boxplot](https://github.com/sgratzl/chartjs-chart-boxplot) | `boxplot`, `violin` |
+| [chartjs-chart-error-bars](https://github.com/sgratzl/chartjs-chart-error-bars) | `barWithErrorBars`, `lineWithErrorBars`, `scatterWithErrorBars`, `polarAreaWithErrorBars` |
+| [chartjs-chart-funnel](https://github.com/sgratzl/chartjs-chart-funnel) | `funnel` |
+| [chartjs-chart-geo](https://github.com/sgratzl/chartjs-chart-geo) | `choropleth`, `bubbleMap` (a `topojson` helper is available in JS configs) |
+| [chartjs-chart-graph](https://github.com/sgratzl/chartjs-chart-graph) | `graph`, `forceDirectedGraph`, `dendrogram`, `tree` |
+| [chartjs-chart-pcp](https://github.com/sgratzl/chartjs-chart-pcp) | `pcp`, `logarithmicPcp` (parallel coordinates) |
+| [chartjs-chart-venn](https://github.com/sgratzl/chartjs-chart-venn) | `venn`, `euler` |
+| [chartjs-chart-wordcloud](https://github.com/sgratzl/chartjs-chart-wordcloud) | `wordCloud` |
+| [chartjs-plugin-hierarchical](https://github.com/sgratzl/chartjs-plugin-hierarchical) | `hierarchical` scale type for expandable category axes |
+| [chartjs-adapter-moment](https://github.com/chartjs/chartjs-adapter-moment) | `time` scales with moment.js format strings |
+
+QuickChart custom types also work: `sparkline`, `progressBar`, and the `donut` alias.  `horizontalBoxplot`/`horizontalViolin` map to their vertical counterparts with `indexAxis: 'y'`.  Default dataset colors come from the built-in Chart.js [Colors plugin](https://www.chartjs.org/docs/latest/general/colors.html).
+
+Note on server-side rendering: charts render exactly once (no animation loop), so `forceDirectedGraph` layouts run a fixed number of simulation iterations and are approximate.
 
 ## QR Codes
 
@@ -75,27 +102,37 @@ The `/qr` endpoint has the following query parameters:
 
 ## Dependencies and Installation
 
-Chart generation requires several system dependencies: Cairo, Pango, libjpeg, and libgif.  Run `./scripts/setup.sh` for a fresh install on Linux machines (note that this also installs yarn, node, and monit).
+Requires Node.js >= 20.9.
 
-To install system dependencies on Mac OSX, you probably just need to `brew install cairo pango libffi`.  You may have to `export PKG_CONFIG_PATH="/usr/local/opt/libffi/lib/pkgconfig"` before installing node packages.
+Chart generation uses [node-canvas](https://github.com/Automattic/node-canvas).  Prebuilt binaries cover most platforms (Windows, macOS, glibc Linux); on Alpine/musl it compiles from source and needs Cairo, Pango, libjpeg, giflib, librsvg, and pixman development headers (see the `Dockerfile` for the exact package list).
 
-Once you have system dependencies installed, run `yarn install` or `npm install` to install the node dependencies.
+Install node dependencies with:
+
+```
+npm install
+```
 
 ## Running the server
 
-`node index.js` will start the server on port 3400.  Set your `PORT` environmental variable to change this port.
+`npm start` (or `node index.js`) starts the server on port 3400.  Set your `PORT` environment variable to change this port.
+
+Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000), `RATE_LIMIT_PER_MIN` (enables rate limiting on `/chart` when set), `TRUST_PROXY` (Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting — `true`, a hop count, or an IP/CIDR list; set this when running behind a reverse proxy so rate limiting sees real client IPs; default is off, so `X-Forwarded-For` is ignored and cannot be spoofed), `REQUEST_TIMEOUT_MS` (default 5000), `EXPRESS_JSON_LIMIT` (default 100kb), `LOG_LEVEL`, `ENABLE_TELEMETRY` (usage telemetry is **disabled** unless this is set).
+
+## Testing
+
+- `npm test` runs the fast test suite (in-process rendering + HTTP tests via supertest), including a render test for every supported chart type.
+- `npm run test:e2e` runs end-to-end tests with [testcontainers](https://node.testcontainers.org/): it builds the Docker image, starts a container, sends `POST /chart` requests for every basic and plugin chart type, verifies the responses, and tears the container down.  Requires a running Docker daemon.  If the testcontainers reaper fails to start on your setup, run with `TESTCONTAINERS_RYUK_DISABLED=true`.
 
 ## Docker
 
-A docker image is available on dockerhub at [ianw/quickchart](https://hub.docker.com/r/ianw/quickchart).
+Tagged releases (`vX.Y.Z`) are automatically built and published as multi-arch (amd64 + arm64) images to GitHub Container Registry as `ghcr.io/<owner>/quickchart:<version>` and `:latest` (see `.github/workflows/release.yml`).  Pull requests run the full test suite, including the Docker E2E tests (`.github/workflows/ci.yml`).
 
 #### Building
 
-`Dockerfile` sets up a server that provides chart and qr code web endpoints.  It is not parameterized and provides exactly the same web service as https://quickchart.io/.
+`Dockerfile` sets up a server that provides chart and qr code web endpoints.
 
-The Docker image for this project is built with the following command:
 ```
-docker build -t ianw/quickchart .
+docker build -t quickchart .
 ```
 
 #### Running
@@ -103,42 +140,36 @@ docker build -t ianw/quickchart .
 The server runs on port 3400 within the container.  This command will expose the server on port 8080 on your host (hostport:containerport):
 
 ```
-docker run -p 8080:3400 ianw/quickchart
+docker run -p 8080:3400 quickchart
 ```
-
-The production service on QuickChart.io runs behind an NGINX reverse proxy via the config available in `nginx/`.  You should modify this for your own purposes or use a docker image such as [nginx-proxy](https://github.com/jwilder/nginx-proxy).  Of course, you can always serve traffic directly from Node, but it is generally best practice to put something in front of it.
-
-#### Securing your self-hosted instance
-
-If you are hosting QuickChart youself, take care not to expose the service to untrusted parties.  Because Chart.js configs may contain arbitrary Javascript, it is necessary to properly sandbox your QuickChart instance.
 
 ## Deploy
 
 By following the **Docker** instructions above, you can deploy the service to any platform that supports running containers.
 
-Clicking the following will execute the Docker build on a remote machine and deploy the service to [Google Cloud Run](https://cloud.run) an automatically scaled and pay-per-request environment:
-
-[![Run on Google Cloud](https://storage.googleapis.com/cloudrun/button.svg)](https://console.cloud.google.com/cloudshell/editor?shellonly=true&cloudshell_image=gcr.io/cloudrun/button&cloudshell_git_repo=https://github.com/typpo/quickchart)
-
 ## Securing your self-hosted instance
 
-This server assumes all Javascript sent in the config object is friendly.  If you are hosting QuickChart youself, take care not to expose the service to untrusted parties.  Because Chart.js configs may contain arbitrary Javascript, it is necessary to properly sandbox your QuickChart instance if you are exposing it to the outside world.
+This server assumes all Javascript sent in the config object is friendly.  If you are hosting QuickChart yourself, take care not to expose the service to untrusted parties.  Because Chart.js configs may contain arbitrary Javascript, it is necessary to properly sandbox your QuickChart instance if you are exposing it to the outside world.
 
 ## Health and Monitoring
 
 QuickChart has two API endpoints to determine the health of the service.
 
-`/healthcheck` is a basic endpoint that returns a 200 status code and a JSON object that looks like this: `{"success":true,"version":"1.1.0"}`.
+`/healthcheck` is a basic endpoint that returns a 200 status code and a JSON object that looks like this: `{"success":true,"version":"2.0.0"}`.
 
 A second endpoint, `/healthcheck/chart` returns a 302 status code and redirects to a chart with random attributes.  Although it is a more expensive endpoint, it can be useful for cache busting or testing chart rendering.
 
-The hosted QuickChart service uses [monit](https://mmonit.com/monit/) to make sure the service is online and restart it if not.  An example monit config is in `test/monit`.
+## Differences from upstream
 
-## Limitations
+This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 
-If you are self-hosting QuickChart, each QuickChart instance should use a single version of the Chart.js library.  Mixing and matching versions (e.g., rendering a v2 chart followed by a v3 chart) is not well supported.
-
-This self-hosted QuickChart implementation currently supports the `/chart`, `/qr`, and `/graphviz` endpoints.  Other endpoints such as `/wordcloud`, `watermark`, `/chart/create` are not available in this version due to non-OSS 3rd-party dependencies.
+- **Chart.js 4 only.** The `version` parameter is accepted but ignored.  Chart.js 2-era plugins with no maintained successor were removed: `chartjs-plugin-piechart-outlabels`, `chartjs-plugin-doughnutlabel`, `chartjs-plugin-colorschemes` (the built-in Colors plugin provides default palettes), and `chartjs-chart-radial-gauge`.  The chart types `radialGauge`, `outlabeledPie`, and `outlabeledDoughnut` are no longer available.
+- **All sgratzl chart.js plugins added** (boxplot/violin, error bars, funnel, geo, graph, pcp, venn, wordcloud, hierarchical).
+- **Google Image Charts compatibility removed** (`/gchart` and `cht=` parameters).
+- **Graphviz rendering removed.**
+- **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.
+- **Telemetry is opt-in** (`ENABLE_TELEMETRY`); the `POST /telemetry` aggregation endpoint is removed.
+- Express 5, pino logging, node-canvas 3, npm instead of yarn, Node 26 Docker base image, and a Docker-based E2E test suite.
 
 ## License
 
