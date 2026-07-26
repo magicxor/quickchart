@@ -42,9 +42,9 @@ A chart is defined completely by its URL or by the JSON body of a `POST /chart` 
 | `devicePixelRatio` | | Pixel density multiplier, output is `width*ratio` x `height*ratio` (default 2) |
 | `format` | `f` | `png` (default), `svg`, or `pdf` |
 | `encoding` | | `url` (default) or `base64` for the `chart` parameter |
-| `version` | `v` | **Deprecated.** Accepted for backwards compatibility but ignored; charts always render with the bundled Chart.js 4 |
+| `version` | `v` | **Deprecated.** Accepted for backwards compatibility but ignored; charts always render with the bundled Chart.js 4.  Requests using it receive an `X-quickchart-deprecation` response header |
 
-Rendering errors return HTTP 500 with the error message rendered as an image and echoed in the `X-quickchart-error` response header.
+Invalid requests (missing or malformed chart config, out-of-range sizes, unknown chart types, unsupported formats) return HTTP **400**; unexpected server failures return HTTP **500**.  In both cases the error message is rendered as an image (so broken embeds show the reason) and echoed in the `X-quickchart-error` response header.
 
 ## Configuring your chart
 
@@ -116,7 +116,7 @@ npm install
 
 `npm start` (or `node index.js`) starts the server on port 3400.  Set your `PORT` environment variable to change this port.
 
-Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000), `RATE_LIMIT_PER_MIN` (enables rate limiting on `/chart` when set), `REQUEST_TIMEOUT_MS` (default 5000), `EXPRESS_JSON_LIMIT` (default 100kb), `LOG_LEVEL`, `DISABLE_TELEMETRY`.
+Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000), `RATE_LIMIT_PER_MIN` (enables rate limiting on `/chart` when set), `REQUEST_TIMEOUT_MS` (default 5000), `EXPRESS_JSON_LIMIT` (default 100kb), `LOG_LEVEL`, `ENABLE_TELEMETRY` (usage telemetry is **disabled** unless this is set).
 
 ## Testing
 
@@ -165,6 +165,8 @@ This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 - **All sgratzl chart.js plugins added** (boxplot/violin, error bars, funnel, geo, graph, pcp, venn, wordcloud, hierarchical).
 - **Google Image Charts compatibility removed** (`/gchart` and `cht=` parameters).
 - **Graphviz rendering removed.**
+- **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.
+- **Telemetry is opt-in** (`ENABLE_TELEMETRY`); the `POST /telemetry` aggregation endpoint is removed.
 - Express 5, pino logging, node-canvas 3, npm instead of yarn, Node 24 Docker base image, and a Docker-based E2E test suite.
 
 ## License

@@ -63,21 +63,6 @@ app.get('/', (req, res) => {
   );
 });
 
-app.post('/telemetry', (req, res) => {
-  const chartCount = parseInt(req.body.chartCount, 10);
-  const qrCount = parseInt(req.body.qrCount, 10);
-  const pid = req.body.pid;
-
-  if (chartCount && !isNaN(chartCount)) {
-    telemetry.receive(pid, 'chartCount', chartCount);
-  }
-  if (qrCount && !isNaN(qrCount)) {
-    telemetry.receive(pid, 'qrCount', qrCount);
-  }
-
-  res.send({ success: true });
-});
-
 function utf8ToAscii(str) {
   const enc = new TextEncoder();
   const u8s = enc.encode(str);
@@ -94,13 +79,22 @@ function sanitizeErrorHeader(msg) {
   return '';
 }
 
+function errorText(msg) {
+  return msg instanceof Error ? msg.message : String(msg);
+}
+
+function escapeXml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function failPng(res, msg, statusCode = 500) {
+  const text = errorText(msg);
   res.writeHead(statusCode, {
     'Content-Type': 'image/png',
-    'X-quickchart-error': sanitizeErrorHeader(msg),
+    'X-quickchart-error': sanitizeErrorHeader(text),
   });
   res.end(
-    renderTextToPng(`Chart Error: ${msg}`, {
+    renderTextToPng(`Chart Error: ${text}`, {
       padding: 10,
       backgroundColor: '#fff',
     }),
@@ -108,9 +102,10 @@ function failPng(res, msg, statusCode = 500) {
 }
 
 function failSvg(res, msg, statusCode = 500) {
+  const text = errorText(msg);
   res.writeHead(statusCode, {
     'Content-Type': 'image/svg+xml',
-    'X-quickchart-error': sanitizeErrorHeader(msg),
+    'X-quickchart-error': sanitizeErrorHeader(text),
   });
   res.end(`
 <svg viewBox="0 0 240 80" xmlns="http://www.w3.org/2000/svg">
@@ -121,16 +116,17 @@ function failSvg(res, msg, statusCode = 500) {
   </style>
   <foreignObject width="240" height="80"
    requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
-    <p xmlns="http://www.w3.org/1999/xhtml">${msg}</p>
+    <p xmlns="http://www.w3.org/1999/xhtml">${escapeXml(text)}</p>
   </foreignObject>
 </svg>`);
 }
 
-async function failPdf(res, msg) {
-  const buf = await getPdfBufferWithText(msg);
-  res.writeHead(500, {
+async function failPdf(res, msg, statusCode = 500) {
+  const text = errorText(msg);
+  const buf = await getPdfBufferWithText(text);
+  res.writeHead(statusCode, {
     'Content-Type': 'application/pdf',
-    'X-quickchart-error': sanitizeErrorHeader(msg),
+    'X-quickchart-error': sanitizeErrorHeader(text),
   });
   res.end(buf);
 }
@@ -181,8 +177,15 @@ async function renderChartToPdf(req, res, opts) {
 }
 
 function doChartjsRender(req, res, opts) {
+  if (opts.version) {
+    res.set(
+      'X-quickchart-deprecation',
+      'The version parameter is deprecated and ignored; charts always render with Chart.js 4',
+    );
+  }
+
   if (!opts.chart) {
-    opts.failFn(res, 'You are missing variable `c` or `chart`');
+    opts.failFn(res, 'You are missing variable `c` or `chart`', 400);
     return;
   }
 
@@ -196,7 +199,7 @@ function doChartjsRender(req, res, opts) {
       untrustedInput = Buffer.from(opts.chart, 'base64').toString('utf8');
     } catch (err) {
       logger.warn('base64 malformed', err);
-      opts.failFn(res, err);
+      opts.failFn(res, err, 400);
       return;
     }
   }
@@ -213,7 +216,7 @@ function doChartjsRender(req, res, opts) {
     .then(opts.onRenderHandler)
     .catch((err) => {
       logger.warn('Chart error', err);
-      opts.failFn(res, err);
+      opts.failFn(res, err, err && err.statusCode ? err.statusCode : 500);
     });
 }
 
@@ -238,7 +241,7 @@ app.get('/chart', (req, res) => {
     renderChartToPng(req, res, opts);
   } else {
     logger.error(`Request for unsupported format ${outputFormat}`);
-    res.status(500).end(`Unsupported format ${outputFormat}`);
+    res.status(400).end(`Unsupported format ${outputFormat}`);
   }
 
   telemetry.count('chartCount');
@@ -271,7 +274,7 @@ app.post('/chart', (req, res) => {
 app.get('/qr', (req, res) => {
   const qrText = req.query.text;
   if (!qrText) {
-    failPng(res, 'You are missing variable `text`');
+    failPng(res, 'You are missing variable `text`', 400);
     return;
   }
 
@@ -310,7 +313,8 @@ app.get('/qr', (req, res) => {
       res.end(buf);
     })
     .catch((err) => {
-      failPng(res, err);
+      // QR failures are input-driven (data too long, bad params).
+      failPng(res, err, 400);
     });
 
   telemetry.count('qrCount');

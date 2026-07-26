@@ -192,6 +192,79 @@ describe('chart request', () => {
   });
 });
 
+describe('api error handling and headers', () => {
+  it('returns a deprecation header when version is specified', (done) => {
+    request(app)
+      .post('/chart')
+      .send({
+        chart: BASIC_CHART,
+        version: '2.9.4',
+      })
+      .expect('Content-Type', 'image/png')
+      .expect(200)
+      .end((err, res) => {
+        assert(res.headers['x-quickchart-deprecation'].includes('deprecated'));
+        done();
+      });
+  });
+
+  it('returns no deprecation header without a version', (done) => {
+    request(app)
+      .post('/chart')
+      .send({
+        chart: BASIC_CHART,
+      })
+      .expect(200)
+      .end((err, res) => {
+        assert.strictEqual(res.headers['x-quickchart-deprecation'], undefined);
+        done();
+      });
+  });
+
+  it('returns 400 when the chart is missing', (done) => {
+    request(app)
+      .post('/chart')
+      .send({})
+      .expect('Content-Type', 'image/png')
+      .expect(400)
+      .end((err, res) => {
+        assert(res.headers['x-quickchart-error'].includes('missing variable'));
+        done();
+      });
+  });
+
+  it('returns 400 with a populated error header for an invalid config', (done) => {
+    request(app)
+      .post('/chart')
+      .send({
+        chart: 'this is not a chart config {{{',
+      })
+      .expect('Content-Type', 'image/png')
+      .expect(400)
+      .end((err, res) => {
+        assert(res.headers['x-quickchart-error'].includes('Invalid input'));
+        done();
+      });
+  });
+
+  it('returns 400 for an unknown chart type', (done) => {
+    request(app)
+      .post('/chart')
+      .send({
+        chart: { type: 'radialGauge', data: { datasets: [{ data: [50] }] } },
+      })
+      .expect(400)
+      .end((err, res) => {
+        assert(res.headers['x-quickchart-error'].length > 0);
+        done();
+      });
+  });
+
+  it('no longer serves POST /telemetry', (done) => {
+    request(app).post('/telemetry').send({ chartCount: 1, pid: 'abc' }).expect(404, done);
+  });
+});
+
 describe('qr endpoint', () => {
   it('renders basic qr', (done) => {
     const qrText = 'hello werld';

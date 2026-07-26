@@ -130,26 +130,42 @@ describe('quickchart e2e (docker)', function () {
   });
 
   describe('error handling', () => {
-    it('returns an error image for an invalid config', async () => {
+    it('returns 400 and an error image for an invalid config', async () => {
       const res = await fetch(`${baseUrl}/chart`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ chart: 'this is not a chart config {{{' }),
       });
-      assert.strictEqual(res.status, 500);
+      assert.strictEqual(res.status, 400);
       assert.strictEqual(res.headers.get('content-type'), 'image/png');
+      assert(res.headers.get('x-quickchart-error').includes('Invalid input'));
       const buf = Buffer.from(await res.arrayBuffer());
       assert(buf.subarray(0, 8).equals(PNG_MAGIC), 'error responses render as PNG');
     });
 
-    it('returns an error when the chart is missing', async () => {
+    it('returns 400 when the chart is missing', async () => {
       const res = await fetch(`${baseUrl}/chart`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({}),
       });
-      assert.strictEqual(res.status, 500);
+      assert.strictEqual(res.status, 400);
       assert(res.headers.get('x-quickchart-error').includes('missing variable'));
+    });
+
+    it('marks the version parameter as deprecated', async () => {
+      const res = await postChart(BASIC_CONFIGS.bar, { version: '2' });
+      await assertPngResponse(res);
+      assert(res.headers.get('x-quickchart-deprecation').includes('deprecated'));
+    });
+
+    it('does not serve POST /telemetry', async () => {
+      const res = await fetch(`${baseUrl}/telemetry`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chartCount: 1, pid: 'abc' }),
+      });
+      assert.strictEqual(res.status, 404);
     });
   });
 
