@@ -131,6 +131,19 @@ describe('automatic projection', () => {
     assert(Math.abs(spec.center[1] - 51.2) < 1, `center ${spec.center[1]}`);
   });
 
+  it('measures the longitude span in the rotated frame', () => {
+    // Fiji's polygons are split at 180 in the vendored data, so d3.geoBounds
+    // reports the full 360 degrees for a country a few degrees wide. Measuring
+    // from the bbox would classify it as global and hand back equalEarth.
+    const { bbox } = describeGeometry(getMap('fji').features);
+    assert.strictEqual(bbox[0], -180);
+    assert.strictEqual(bbox[2], 180);
+
+    const spec = autoProjectionSpec(getMap('fji').features, 'fji');
+    assert.strictEqual(spec.type, 'conicEqualArea');
+    assert(Math.abs(spec.rotate[0] + 178.5) < 1, `rotate ${spec.rotate[0]}`);
+  });
+
   it('uses the override table for the composite and global maps', () => {
     assert.deepStrictEqual(autoProjectionSpec(getMap('us-states').features, 'us-states'), {
       type: 'albersUsa',
@@ -273,6 +286,13 @@ describe('projection wiring', () => {
     assert(auto.width > 0.9, `auto width ${auto.width}`);
     assert(auto.height > 0.5, `auto height ${auto.height}`);
     assert(fixed.height < auto.height / 2, `fixed height ${fixed.height} vs auto ${auto.height}`);
+  });
+
+  it('frames a map whose polygons are split at the antimeridian', async () => {
+    const rows = [];
+    const auto = await inkBox(choropleth('fji', rows));
+    const fixed = await inkBox(choropleth('fji', rows, { projection: 'equalEarth' }));
+    assert(auto.width > fixed.width * 3, `fiji: ${auto.width} auto vs ${fixed.width}`);
   });
 
   it('uses the composite projection for the US maps', async () => {
