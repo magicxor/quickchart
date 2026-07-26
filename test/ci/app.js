@@ -198,6 +198,22 @@ describe('api error handling and headers', () => {
     assert(res.headers['x-quickchart-error'].includes('Invalid input'));
   });
 
+  it('returns 400 for out-of-range dimensions', async () => {
+    for (const bad of [0, -100, 'abc', 99999]) {
+      const res = await request(app)
+        .post('/chart')
+        .send({
+          chart: BASIC_CHART,
+          width: bad,
+        })
+        .expect(400);
+      assert(
+        res.headers['x-quickchart-error'].includes('width'),
+        `expected width error for ${bad}, got: ${res.headers['x-quickchart-error']}`,
+      );
+    }
+  });
+
   it('returns 400 for a progressBar without data', async () => {
     const res = await request(app)
       .post('/chart')

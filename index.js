@@ -182,6 +182,13 @@ async function renderChartToPdf(req, res, opts) {
   doChartjsRender(req, res, opts);
 }
 
+function parseSizeParam(value, defaultValue) {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+  return parseInt(value, 10);
+}
+
 function doChartjsRender(req, res, opts) {
   if (opts.version) {
     res.set(
@@ -195,8 +202,11 @@ function doChartjsRender(req, res, opts) {
     return;
   }
 
-  const width = parseInt(opts.width, 10) || 500;
-  const height = parseInt(opts.height, 10) || 300;
+  // Absent parameters get defaults; present-but-invalid values are passed
+  // through so the renderer rejects them as 400 input errors (instead of
+  // silently defaulting or leaking into canvas code as a 500).
+  const width = parseSizeParam(opts.width, 500);
+  const height = parseSizeParam(opts.height, 300);
 
   let untrustedInput = opts.chart;
   if (opts.encoding === 'base64') {
