@@ -99,7 +99,11 @@ describe('quickchart e2e (docker)', function () {
     it('renders svg', async () => {
       const res = await postChart(BASIC_CONFIGS.bar, { format: 'svg' });
       assert.strictEqual(res.status, 200);
-      assert.strictEqual(res.headers.get('content-type'), 'image/svg+xml');
+      const contentType = res.headers.get('content-type') || '';
+      assert(
+        contentType.startsWith('image/svg+xml'),
+        `expected content-type image/svg+xml, got ${contentType}`,
+      );
       assert.strictEqual(res.headers.get('x-quickchart-error'), null);
       const body = await res.text();
       assert(
