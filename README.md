@@ -39,7 +39,7 @@ A chart is defined completely by its URL or by the JSON body of a `POST /chart` 
 | `width` | `w` | Image width in logical pixels (default 500) |
 | `height` | `h` | Image height in logical pixels (default 300) |
 | `backgroundColor` | `bkg` | Canvas background color (default transparent) |
-| `devicePixelRatio` | | Pixel density multiplier, output is `width*ratio` x `height*ratio` (default 2) |
+| `devicePixelRatio` | | Pixel density multiplier, output is `width*ratio` x `height*ratio` (default 2, must be > 0 and <= 4) |
 | `format` | `f` | `png` (default), `svg`, or `pdf` |
 | `encoding` | | `url` (default) or `base64` for the `chart` parameter |
 | `version` | `v` | **Deprecated.** Accepted for backwards compatibility but ignored; charts always render with the bundled Chart.js 4.  Requests using it receive an `X-quickchart-deprecation` response header |

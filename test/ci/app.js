@@ -214,6 +214,22 @@ describe('api error handling and headers', () => {
     }
   });
 
+  it('returns 400 for an out-of-range devicePixelRatio', async () => {
+    for (const bad of [0, -1, 100, 'abc']) {
+      const res = await request(app)
+        .post('/chart')
+        .send({
+          chart: BASIC_CHART,
+          devicePixelRatio: bad,
+        })
+        .expect(400);
+      assert(
+        res.headers['x-quickchart-error'].includes('devicePixelRatio'),
+        `expected devicePixelRatio error for ${bad}, got: ${res.headers['x-quickchart-error']}`,
+      );
+    }
+  });
+
   it('returns 400 for a progressBar without data', async () => {
     const res = await request(app)
       .post('/chart')
