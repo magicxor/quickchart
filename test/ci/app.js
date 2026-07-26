@@ -208,6 +208,14 @@ describe('api error handling and headers', () => {
     assert(res.headers['x-quickchart-error'].length > 0);
   });
 
+  it('returns 400 as an error image for an unsupported format', async () => {
+    const res = await request(app)
+      .get(`/chart?c=${encodeURIComponent(JSON.stringify(BASIC_CHART))}&format=bmp`)
+      .expect('Content-Type', 'image/png')
+      .expect(400);
+    assert(res.headers['x-quickchart-error'].includes('Unsupported format'));
+  });
+
   it('no longer serves POST /telemetry', async () => {
     await request(app).post('/telemetry').send({ chartCount: 1, pid: 'abc' }).expect(404);
   });
