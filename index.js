@@ -203,7 +203,10 @@ function parseSizeParam(value, defaultValue) {
   if (value === undefined || value === null || value === '') {
     return defaultValue;
   }
-  return parseInt(value, 10);
+  // Number() rather than parseInt(): partially-numeric input like '500px'
+  // must reach the renderer as NaN and be rejected as a 400, not silently
+  // truncated to 500.
+  return Number(value);
 }
 
 function doChartjsRender(req, res, opts) {
