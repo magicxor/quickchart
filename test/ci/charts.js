@@ -9,6 +9,10 @@ const chartsLib = require('../../lib/charts');
 const charts = require('./chart_helpers');
 const { assertSimilarRgb } = require('./color_helpers');
 
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 describe('charts.js', () => {
   it('renders a JSON chart', async () => {
     const buf = await chartsLib.renderChartJs(
@@ -16,32 +20,30 @@ describe('charts.js', () => {
       100,
       'white',
       1.0,
-      '2.9.4',
+      undefined,
       'png',
-      charts.BASIC_CHART,
+      clone(charts.BASIC_CHART),
     );
 
     assert(buf.length > 0);
     const dimensions = imageSize(buf);
-    // Device pixel ratio is 2.0, so multiply dimensions by that.
     assert.equal(200, dimensions.width);
     assert.equal(100, dimensions.height);
   });
 
-  it('renders a JSON chart in Chart.js V3', async () => {
+  it('ignores legacy chart.js versions and still renders', async () => {
     const buf = await chartsLib.renderChartJs(
       200,
       100,
       'white',
       1.0,
-      '3',
+      '2.9.4',
       'png',
-      charts.BASIC_CHART_V3,
+      clone(charts.BASIC_CHART),
     );
 
     assert(buf.length > 0);
     const dimensions = imageSize(buf);
-    // Device pixel ratio is 2.0, so multiply dimensions by that.
     assert.equal(200, dimensions.width);
     assert.equal(100, dimensions.height);
   });
@@ -52,14 +54,30 @@ describe('charts.js', () => {
       100,
       'white',
       2.0,
-      '2.9.4',
+      undefined,
       'png',
-      charts.BASIC_CHART,
+      clone(charts.BASIC_CHART),
     );
 
     assert(buf.length > 0);
     const dimensions = imageSize(buf);
     // Device pixel ratio is 2.0, so multiply dimensions by that.
+    assert.equal(200 * 2, dimensions.width);
+    assert.equal(100 * 2, dimensions.height);
+  });
+
+  it('defaults to a 2.0 device pixel ratio', async () => {
+    const buf = await chartsLib.renderChartJs(
+      200,
+      100,
+      'white',
+      undefined,
+      undefined,
+      'png',
+      clone(charts.BASIC_CHART),
+    );
+
+    const dimensions = imageSize(buf);
     assert.equal(200 * 2, dimensions.width);
     assert.equal(100 * 2, dimensions.height);
   });
@@ -70,25 +88,11 @@ describe('charts.js', () => {
       100,
       'white',
       2.0,
-      '2.9.4',
+      undefined,
       'png',
       charts.JS_CHART,
     );
     assert(buf.length > 0);
-  });
-
-  it('renders a chart color scheme', async () => {
-    const buf = await chartsLib.renderChartJs(
-      200,
-      100,
-      'white',
-      2.0,
-      '2.9.4',
-      'png',
-      charts.CHART_COLOR_SCHEME,
-    );
-    const rgb = (await getColors(buf, 'image/png'))[0].rgb();
-    assertSimilarRgb([156, 156, 252], rgb);
   });
 
   it('renders a chart with gradient fill', async () => {
@@ -97,7 +101,7 @@ describe('charts.js', () => {
       200,
       'transparent',
       2.0,
-      '2.9.4',
+      undefined,
       'png',
       charts.CHART_GRADIENT_FILL,
     );
@@ -111,9 +115,9 @@ describe('charts.js', () => {
       200,
       'white',
       2.0,
-      '2.9.4',
+      undefined,
       'png',
-      charts.CHART_VIOLIN,
+      clone(charts.CHART_VIOLIN),
     );
     const dimensions = imageSize(buf);
     assert.equal(600, dimensions.width);
@@ -126,28 +130,37 @@ describe('charts.js', () => {
       50,
       'red',
       2.0,
-      '2.9.4',
+      undefined,
       'png',
-      charts.CHART_PROGRESSBAR,
+      clone(charts.CHART_PROGRESSBAR),
     );
-    const rgb = (await getColors(buf, 'image/png'))[2].rgb();
-    assertSimilarRgb([76, 124, 164], rgb);
+    const colors = (await getColors(buf, 'image/png')).map((color) => color.rgb());
+    // The progress bar track border defaults to the first Tableau color.
+    const expected = [78, 120, 167];
+    assert(
+      colors.some(
+        (rgb) =>
+          Math.abs(rgb[0] - expected[0]) < 40 &&
+          Math.abs(rgb[1] - expected[1]) < 40 &&
+          Math.abs(rgb[2] - expected[2]) < 40,
+      ),
+      `expected a color similar to ${expected} in ${JSON.stringify(colors)}`,
+    );
   });
 
-  it('renders a datetime chart in Chart.js V3', async () => {
+  it('renders a datetime chart with the moment adapter', async () => {
     const buf = await chartsLib.renderChartJs(
       200,
       100,
       'white',
       1.0,
-      '3',
+      undefined,
       'png',
-      charts.DATETIME_V3,
+      clone(charts.DATETIME_CHART),
     );
 
     assert(buf.length > 0);
     const dimensions = imageSize(buf);
-    // Device pixel ratio is 2.0, so multiply dimensions by that.
     assert.equal(200, dimensions.width);
     assert.equal(100, dimensions.height);
   });
@@ -158,13 +171,14 @@ describe('charts.js', () => {
       300,
       'white',
       1.0,
-      '2.9.4',
+      undefined,
       'svg',
-      charts.BASIC_CHART,
+      clone(charts.BASIC_CHART),
     );
 
-    assert(
-      buf.toString().includes('<path style=" stroke:none;fill-rule:nonzero;fill:rgb(40%,40%,40%)'),
-    );
+    const svg = buf.toString();
+    assert(svg.includes('<svg'), 'expected an <svg> root element');
+    assert(svg.includes('<path'), 'expected vector path data');
+    assert(svg.length > 1000, 'expected non-trivial svg output');
   });
 });

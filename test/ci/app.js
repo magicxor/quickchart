@@ -180,9 +180,9 @@ describe('chart request', () => {
       .expect(200)
       .end(async (err, res) => {
         const rgb = (await getColors(res.body, 'image/png'))[0].rgb();
-        // Image is transparent by default - expect dominant color to be blue
-        // bars.
-        assertSimilarRgb([76, 124, 164], rgb);
+        // Image is transparent by default - expect dominant color to be the
+        // chart.js 4 Colors plugin default blue.
+        assertSimilarRgb([52, 164, 236], rgb);
 
         const dimensions = imageSize(res.body);
         assert.equal(500 * 2, dimensions.width);
