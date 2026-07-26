@@ -72,7 +72,7 @@ Many Chart.js options take a function — the datalabels `formatter`, `ticks.cal
 }
 ```
 
-Quoted sources are recognized under the option names that Chart.js and its plugins accept a function for (`formatter`, `display`, `callback`, `filter`, the `tooltip.callbacks.*` names, scriptable colors and point styles, …), and only when the string really is a function expression or arrow function — a dataset `label` or a title `text` is never mistaken for code, and dataset data and category labels are not inspected at all.  A string that looks like a function but does not parse fails with a **400** naming the option, instead of being drawn as a label.
+Quoted sources are recognized under the option names that Chart.js and its plugins accept a function for (`formatter`, `display`, `callback`, `filter`, the `tooltip.callbacks.*` names, scriptable colors and point styles, …), and only when the string really is a function expression or arrow function.  Names that are a function in one place and text in another — `label`, `title`, `footer`, an annotation's `content`/`value` — are compiled only where Chart.js takes a function, so a dataset labelled `"x => y"` stays a legend entry.  Dataset data and category labels are not inspected at all.  A string that looks like a function but does not parse fails with a **400** naming the option, instead of being drawn as a label.
 
 Note that a config sent as a string is evaluated as Javascript in full, so this adds no capability the API did not already have — see [Securing your self-hosted instance](#securing-your-self-hosted-instance).
 

@@ -165,6 +165,44 @@ describe('quoted function options', () => {
     assert.deepStrictEqual(chart, before);
   });
 
+  it('compiles names that are text elsewhere only where a function belongs', () => {
+    // A legend entry that happens to read like an arrow function is text; the
+    // same name under the tooltip's callbacks is code.
+    const chart = {
+      data: { datasets: [{ label: 'x => y', title: 'f(x) => y', data: [1] }] },
+      options: {
+        scales: { x: { title: { text: 'x => y' } } },
+        plugins: {
+          tooltip: {
+            callbacks: { label: '(item) => item.formattedValue + " шт"', title: 'x => "T"' },
+          },
+          annotation: {
+            annotations: {
+              line1: { label: { content: '(ctx) => "peak"' }, value: 'v => 5' },
+            },
+          },
+        },
+      },
+    };
+    compileFunctionStrings(chart);
+
+    assert.strictEqual(chart.data.datasets[0].label, 'x => y');
+    assert.strictEqual(chart.data.datasets[0].title, 'f(x) => y');
+    assert.strictEqual(chart.options.scales.x.title.text, 'x => y');
+    assert.strictEqual(typeof chart.options.plugins.tooltip.callbacks.label, 'function');
+    assert.strictEqual(typeof chart.options.plugins.tooltip.callbacks.title, 'function');
+    const { line1 } = chart.options.plugins.annotation.annotations;
+    assert.strictEqual(typeof line1.label.content, 'function');
+    assert.strictEqual(typeof line1.value, 'function');
+  });
+
+  it('does not reject a legend entry whose "body" would not parse', () => {
+    // Compiling this one would fail to parse and turn a fine chart into a 400.
+    const chart = { data: { datasets: [{ label: 'y => 100%', data: [1] }] } };
+    assert.doesNotThrow(() => compileFunctionStrings(chart));
+    assert.strictEqual(chart.data.datasets[0].label, 'y => 100%');
+  });
+
   it('leaves real functions and other values untouched', () => {
     const formatter = (v) => v.y;
     const chart = { options: { plugins: { datalabels: { formatter, display: true, offset: 4 } } } };
@@ -260,15 +298,26 @@ describe('labelled charts render', () => {
     assert.strictEqual(chart.options.plugins.datalabels.display, false);
   });
 
-  it('does not walk inline map geometry', () => {
-    // A world outline is ~4000 coordinate rings; the walk must skip them.
+  it('does not walk data rows or inline map geometry', () => {
+    // Marks the arrays the walk must skip with a string it would compile if it
+    // did descend into them - an inline world outline is ~4000 coordinate rings
+    // and every row of it is caller data, not options.
+    const outline = getMap('world').features.map((feature) => ({
+      ...feature,
+      properties: { ...feature.properties, callback: 'function() { return 1; }' },
+    }));
     const chart = {
       type: 'choropleth',
-      data: { datasets: [{ outline: getMap('world').features, data: [] }] },
+      data: {
+        labels: ['function() {}'],
+        datasets: [{ outline, data: [{ feature: 'France', formatter: '() => 1', value: 1 }] }],
+      },
     };
-    const started = process.hrtime.bigint();
     compileFunctionStrings(chart);
-    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
-    assert(elapsedMs < 50, `walking an inline world outline took ${elapsedMs}ms`);
+
+    const [dataset] = chart.data.datasets;
+    assert.strictEqual(typeof dataset.outline[0].properties.callback, 'string');
+    assert.strictEqual(typeof dataset.data[0].formatter, 'string');
+    assert.strictEqual(chart.data.labels[0], 'function() {}');
   });
 });
