@@ -2,6 +2,7 @@ node_modules
 .git
 test
 *.md
+!maps/datamaps/SOURCE.md
 .nvmrc
 .prettierrc.yaml
 telemetry.log
