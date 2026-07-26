@@ -472,6 +472,23 @@ describe('projection wiring', () => {
     }
   });
 
+  it('measures a whole-map fit rather than borrowing the map’s own projection', async () => {
+    // `fit: { map: 'us-states' }` must be aimed by measuring that geometry, not
+    // by looking up AUTO_OVERRIDES for the map - which says albersUsa, whose
+    // composite sub-projections smear the neighbours into the inset corners.
+    const rows = [
+      { feature: 'Canada', value: 8 },
+      { feature: 'Mexico', value: 4 },
+      { feature: 'United States of America', value: 6 },
+    ];
+    const measured = await filledBox(choropleth('world', rows, { fit: { map: 'us-states' } }));
+    const borrowed = await filledBox(
+      choropleth('world', rows, { fit: { map: 'us-states' }, projection: 'albersUsa' }),
+    );
+    assert(measured.width < 0.7, `measured width ${measured.width}`);
+    assert(borrowed.width > 0.8, `albersUsa width ${borrowed.width} (baseline changed?)`);
+  });
+
   it('accepts inline GeoJSON in a fit feature list, alongside names', async () => {
     const rows = [{ feature: 'Amur', value: 10 }];
     const cropped = await filledBox(

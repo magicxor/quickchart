@@ -154,10 +154,14 @@ Mind the doubled name: the scale is `options.scales.projection`, and the project
 "fit": { "bbox": [-25, 34, 45, 72] }                       // same thing
 "fit": { "map": "rus", "features": ["Amur", "Sakhalin"] }  // frame on named features
 "fit": { "map": "deu" }                                    // frame on a whole map
-"fit": { "type": "Polygon", "coordinates": [/* … */] }     // or inline GeoJSON
+
+// or inline GeoJSON - the same Europe box as a polygon
+"fit": { "type": "Polygon", "coordinates": [[[-25, 34], [-25, 72], [45, 72], [45, 34], [-25, 34]]] }
 ```
 
 West may exceed east for a box past the antimeridian: `[160, 62, -172, 72]` is Chukotka.  A `features` list may mix map feature names/ids with inline GeoJSON objects; anything else in it — a number, `null` — is rejected with a 400 rather than quietly framing nothing.
+
+Prefer the `bbox` form over an inline Polygon: d3-geo reads a polygon's **ring winding** to decide which side is the interior, and a box wound the other way is the whole sphere *minus* the box — which fits to the globe and silently frames nothing.  Note the order in the example above: south-west, north-west, north-east, south-east.  `bbox` sidesteps this entirely.
 
 A world choropleth cropped to Europe:
 
@@ -205,7 +209,8 @@ Discovery: `GET /maps` returns all available map names and sources as JSON.  `GE
   "bbox": [19.6, 41.19, -168.98, 81.86],  // east < west: this map wraps past 180°
   "centroid": [95.8, 66.04],
   "projection": { "type": "conicEqualArea", "rotate": [-95.8, 0], "center": [0, 61.53], "parallels": [47.97, 75.08] },
-  "features": [{ "name": "Tomsk", "id": "RU.TO" }, ]
+  // one entry per matchable feature
+  "features": [{ "name": "Tomsk", "id": "RU.TO" }]
 }
 ```
 
