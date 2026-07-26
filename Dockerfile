@@ -24,6 +24,8 @@ RUN apk del .build-deps && rm -rf /var/cache/apk/* /tmp/*
 
 COPY *.js ./
 COPY lib/*.js lib/
+# Built-in TopoJSON maps for geo charts (world/us maps come with npm ci).
+COPY maps/ maps/
 COPY LICENSE .
 
 EXPOSE 3400

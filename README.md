@@ -46,6 +46,8 @@ A chart is defined completely by its URL or by the JSON body of a `POST /chart` 
 
 Invalid requests (missing or malformed chart config, out-of-range sizes, unknown chart types, unsupported formats) return HTTP **400**; unexpected server failures return HTTP **500**.  In both cases the error message is rendered as an image (so broken embeds show the reason) and echoed in the `X-quickchart-error` response header.
 
+Other endpoints: `GET /maps` lists the built-in geo maps (see [Geo charts and built-in maps](#geo-charts-and-built-in-maps)), `GET /qr` renders QR codes, and `GET /healthcheck` reports service health.
+
 ## Configuring your chart
 
 The chart configuration object is based on the popular Chart.js API.  Check out the [Chart.js documentation](https://www.chartjs.org/docs/latest/) for more information on how to customize your chart, or see [QuickChart documentation](https://quickchart.io/documentation#parameters) for API options.
@@ -63,7 +65,7 @@ The following plugins are registered and ready to use:
 | [@sgratzl/chartjs-chart-boxplot](https://github.com/sgratzl/chartjs-chart-boxplot) | `boxplot`, `violin` |
 | [chartjs-chart-error-bars](https://github.com/sgratzl/chartjs-chart-error-bars) | `barWithErrorBars`, `lineWithErrorBars`, `scatterWithErrorBars`, `polarAreaWithErrorBars` |
 | [chartjs-chart-funnel](https://github.com/sgratzl/chartjs-chart-funnel) | `funnel` |
-| [chartjs-chart-geo](https://github.com/sgratzl/chartjs-chart-geo) | `choropleth`, `bubbleMap` (a `topojson` helper is available in JS configs) |
+| [chartjs-chart-geo](https://github.com/sgratzl/chartjs-chart-geo) | `choropleth`, `bubbleMap` — see [Geo charts and built-in maps](#geo-charts-and-built-in-maps) |
 | [chartjs-chart-graph](https://github.com/sgratzl/chartjs-chart-graph) | `graph`, `forceDirectedGraph`, `dendrogram`, `tree` |
 | [chartjs-chart-pcp](https://github.com/sgratzl/chartjs-chart-pcp) | `pcp`, `logarithmicPcp` (parallel coordinates) |
 | [chartjs-chart-venn](https://github.com/sgratzl/chartjs-chart-venn) | `venn`, `euler` |
@@ -74,6 +76,65 @@ The following plugins are registered and ready to use:
 QuickChart custom types also work: `sparkline`, `progressBar`, and the `donut` alias.  `horizontalBoxplot`/`horizontalViolin` map to their vertical counterparts with `indexAxis: 'y'`.  Default dataset colors come from the built-in Chart.js [Colors plugin](https://www.chartjs.org/docs/latest/general/colors.html).
 
 Note on server-side rendering: charts render exactly once (no animation loop), so `forceDirectedGraph` layouts run a fixed number of simulation iterations and are approximate.
+
+### Geo charts and built-in maps
+
+The service bundles TopoJSON map data, so `choropleth` and `bubbleMap` charts can reference maps **by name** — no need to inline GeoJSON or fetch anything:
+
+| Map name | Source | Contents |
+|---|---|---|
+| `world` | [world-atlas](https://www.npmjs.com/package/world-atlas) | All countries (one feature per country) |
+| `world-50m` | world-atlas | Higher-detail countries |
+| `world-land` | world-atlas | Single land outline |
+| `us` | [us-atlas](https://www.npmjs.com/package/us-atlas) | US nation outline |
+| `us-states` | us-atlas | 50 states + territories |
+| `us-counties` | us-atlas | ~3200 counties |
+| `<iso3>` (e.g. `deu`, `fra`, `jpn`) | [datamaps](https://github.com/markmarkoh/datamaps) (vendored) | One country with its first-level subdivisions |
+
+A complete world choropleth is just a few hundred bytes:
+
+```jsonc
+{
+  "type": "choropleth",
+  "data": {
+    "datasets": [{
+      "map": "world",                          // names the map for feature matching
+      "data": [
+        { "feature": "Germany", "value": 83 }, // matched by feature name
+        { "feature": "France",  "value": 67 }
+      ]
+    }]
+  }
+}
+```
+
+How references are resolved:
+
+- A string `outline` resolves to the named map's features. If only `map` is given, it doubles as the outline.
+- Choropleth `data[].feature` strings are matched against the `map` (or `outline`) map's features: first by `properties.name`, then by `id`, case-insensitive.  Feature ids are ISO 3166-1 numeric codes for `world*`, FIPS codes for `us*`, and datamaps subunit codes (e.g. `DE.BE`) for `<iso3>` maps.  Names must match the source data (English short names) — `GET /maps?name=<map>` lists every matchable feature.
+- When a built-in map is used, sensible defaults are filled in: the `projection`/`color`/`size` scales, `showOutline: true`, and a hidden legend.  Anything you configure explicitly is left untouched.
+- Unknown map or feature names fail with HTTP 400 and an explanatory `X-quickchart-error`.
+- Inline GeoJSON objects (the pre-existing behavior) still work anywhere a named reference does — use them for custom shapes.
+
+JS configs can access the same registry via `getMap(name)`, which returns `{ features, topology }` (alongside the existing `topojson` helper):
+
+```js
+{
+  type: 'choropleth',
+  data: {
+    labels: getMap('us-states').features.map((f) => f.properties.name),
+    datasets: [{
+      outline: getMap('us-states').features,
+      data: getMap('us-states').features.map((f) => ({ feature: f, value: Math.random() * 100 }))
+    }]
+  },
+  options: { scales: { projection: { axis: 'x', projection: 'albersUsa' }, color: { axis: 'x' } } }
+}
+```
+
+Discovery: `GET /maps` returns all available map names and sources as JSON; `GET /maps?name=<map>` additionally lists the map's features (name/id pairs).
+
+Note: the per-country datamaps borders are ~2015-era.  Refresh them with `node scripts/sync-datamaps.js` (see `maps/datamaps/SOURCE.md`).
 
 ## QR Codes
 

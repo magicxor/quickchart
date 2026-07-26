@@ -9,6 +9,7 @@ const telemetry = require('./telemetry');
 const { getPdfBufferFromPng, getPdfBufferWithText } = require('./lib/pdf');
 const { logger } = require('./logging');
 const { renderChartJs } = require('./lib/charts');
+const { listMaps, describeMap } = require('./lib/maps');
 const { renderQr, DEFAULT_QR_SIZE } = require('./lib/qr');
 const { renderTextToPng } = require('./lib/text');
 
@@ -354,6 +355,25 @@ app.get('/qr', (req, res) => {
     });
 
   telemetry.count('qrCount');
+});
+
+app.get('/maps', (req, res) => {
+  // Discovery endpoint for built-in geo maps. Without parameters it lists all
+  // map names; ?name=<map> additionally enumerates the features (name/id
+  // pairs) that choropleth data rows can reference.
+  if (req.query.name) {
+    try {
+      res.send(describeMap(String(req.query.name)));
+    } catch (err) {
+      const text = errorText(err);
+      res
+        .status(err && err.statusCode ? err.statusCode : 500)
+        .set('X-quickchart-error', sanitizeErrorHeader(text))
+        .send({ error: text });
+    }
+    return;
+  }
+  res.send(listMaps());
 });
 
 app.get('/healthcheck', (req, res) => {

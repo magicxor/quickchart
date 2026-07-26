@@ -173,6 +173,20 @@ describe('quickchart e2e (docker)', function () {
     });
   });
 
+  describe('maps endpoint', () => {
+    // Named-map chart fixtures in PLUGIN_CONFIGS already prove the map files
+    // render inside the container; this checks discovery.
+    it('lists built-in maps', async () => {
+      const res = await fetch(`${baseUrl}/maps`);
+      assert.strictEqual(res.status, 200);
+      const maps = await res.json();
+      assert(Array.isArray(maps));
+      assert(maps.some((m) => m.name === 'world' && m.source === 'world-atlas'));
+      assert(maps.some((m) => m.name === 'deu' && m.source === 'datamaps'));
+      assert(maps.length > 250, `expected 250+ maps, got ${maps.length}`);
+    });
+  });
+
   describe('qr endpoint', () => {
     it('renders a qr code', async () => {
       const res = await fetch(`${baseUrl}/qr?text=${encodeURIComponent('hello e2e')}`);
