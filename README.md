@@ -113,8 +113,76 @@ How references are resolved:
 - A string `outline` resolves to the named map's features. If only `map` is given, it doubles as the outline.
 - Choropleth `data[].feature` strings are matched against the `map` (or `outline`) map's features: first by `properties.name`, then by `id`, case-insensitive.  Feature ids are ISO 3166-1 numeric codes for `world*`, FIPS codes for `us*`, and datamaps subunit codes (e.g. `DE.BE`) for `<iso3>` maps.  Names must match the source data (English short names) — `GET /maps?name=<map>` lists every matchable feature.
 - When a built-in map is used, sensible defaults are filled in: the `projection`/`color`/`size` scales, `showOutline: true`, and a hidden legend.  Anything you configure explicitly is left untouched.
-- Unknown map or feature names fail with HTTP 400 and an explanatory `X-quickchart-error`.
+- Unknown map, feature, or projection names fail with HTTP 400 and an explanatory `X-quickchart-error`.
 - Inline GeoJSON objects (the pre-existing behavior) still work anywhere a named reference does — use them for custom shapes.
+
+#### Aiming the projection
+
+A projection name on its own cannot be pointed anywhere, and d3's default view is centered on the prime meridian.  For most of the world that is wrong, and for a country whose longitudes wrap past 180° — Russia, Fiji, the US with its Aleutians — it is badly wrong: the map is fitted across the whole globe and the region ends up a sliver in the corner.  So the `projection` scale accepts three things:
+
+```jsonc
+"scales": {
+  "projection": {
+    "axis": "x",
+    "projection": "auto",              // 1. name | "auto" | object
+    "fit": { "bbox": [-25, 34, 45, 72] } // 2. what to frame the view on
+  }
+}
+```
+
+**1. `projection`** — a d3 projection name (`equalEarth`, `mercator`, `albersUsa`, `conicEqualArea`, …), the keyword `auto`, or an object naming the projection and aiming it:
+
+```jsonc
+"projection": {
+  "type": "conicEqualArea",
+  "rotate": [-100, 0],     // spin the globe so 100°E faces the viewer
+  "center": [0, 65],       // then center on 65°N
+  "parallels": [50, 70]    // standard parallels (conic projections only)
+}
+```
+
+Also accepted: `clipAngle`, `clipExtent`, `precision`, `angle`, `reflectX`, `reflectY`.  `scale` and `translate` are not — the fit to the chart area overwrites both; use `projectionScale` (zoom factor) and `projectionOffset` (`[dx, dy]` in pixels) on the scale itself, plus `padding`, to nudge the result.
+
+Mind the doubled name: the scale is `options.scales.projection`, and the projection it uses is that scale's own `projection` option.  Aiming options written one level too high (`scales.projection.rotate`) or on the dataset are rejected with a 400 rather than silently ignored.
+
+`auto` rotates to the outline's centroid meridian and picks conic standard parallels from its latitude range, falling back to `equalEarth` for near-global outlines and `albersUsa` for the US maps.  **It is the default whenever a chart uses a built-in map and does not name a projection of its own**, so `{"map": "rus"}` renders a correctly framed Russia with no options at all.  `GET /maps?name=<map>` reports the exact spec `auto` would choose, so you can copy it and adjust.
+
+**2. `fit`** — the region the view is framed on, independent of what is drawn.  Everything outside the chart area is clipped (`clipMap`, on by default), so this is how you crop a big map down to one region:
+
+```jsonc
+"fit": [-25, 34, 45, 72]                                   // [west, south, east, north]
+"fit": { "bbox": [-25, 34, 45, 72] }                       // same thing
+"fit": { "map": "rus", "features": ["Amur", "Sakhalin"] }  // frame on named features
+"fit": { "map": "deu" }                                    // frame on a whole map
+
+// or inline GeoJSON - the same Europe box as a polygon
+"fit": { "type": "Polygon", "coordinates": [[[-25, 34], [-25, 72], [45, 72], [45, 34], [-25, 34]]] }
+```
+
+West may exceed east for a box past the antimeridian: `[160, 62, -172, 72]` is Chukotka.  A `features` list may mix map feature names/ids with inline GeoJSON objects; anything else in it — a number, `null` — is rejected with a 400 rather than quietly framing nothing.
+
+Prefer the `bbox` form over an inline Polygon: d3-geo reads a polygon's **ring winding** to decide which side is the interior, and a box wound the other way is the whole sphere *minus* the box — which fits to the globe and silently frames nothing.  Note the order in the example above: south-west, north-west, north-east, south-east.  `bbox` sidesteps this entirely.
+
+A world choropleth cropped to Europe:
+
+```jsonc
+{
+  "type": "choropleth",
+  "data": { "datasets": [{ "map": "world", "data": [{ "feature": "Germany", "value": 83 }] }] },
+  "options": {
+    "scales": {
+      "projection": {
+        "axis": "x",
+        "projection": { "type": "conicEqualArea", "rotate": [-10, 0], "center": [0, 53], "parallels": [43, 63] },
+        "fit": { "bbox": [-25, 34, 45, 72] }
+      },
+      "color": { "axis": "x" }
+    }
+  }
+}
+```
+
+When `fit` is given and the projection is left on `auto`, the projection is aimed at the **fit region** rather than at the whole outline — cropping a world map to the Russian Far East frames it and rotates the globe to face it.  If you name a projection yourself, aim it yourself too: `fit` only frames, and a region crossing the antimeridian is cut in half by an unrotated projection's own seam.
 
 JS configs can access the same registry via `getMap(name)`, which returns `{ features, topology }` (alongside the existing `topojson` helper):
 
@@ -132,7 +200,19 @@ JS configs can access the same registry via `getMap(name)`, which returns `{ fea
 }
 ```
 
-Discovery: `GET /maps` returns all available map names and sources as JSON; `GET /maps?name=<map>` additionally lists the map's features (name/id pairs).
+Discovery: `GET /maps` returns all available map names and sources as JSON.  `GET /maps?name=<map>` additionally returns the map's `features` (name/id pairs), its `bbox` (`[west, south, east, north]`) and `centroid`, and the `projection` spec that `auto` would pick for it:
+
+```jsonc
+{
+  "name": "rus",
+  "source": "datamaps",
+  "bbox": [19.6, 41.19, -168.98, 81.86],  // east < west: this map wraps past 180°
+  "centroid": [95.8, 66.04],
+  "projection": { "type": "conicEqualArea", "rotate": [-95.8, 0], "center": [0, 61.53], "parallels": [47.97, 75.08] },
+  // one entry per matchable feature
+  "features": [{ "name": "Tomsk", "id": "RU.TO" }]
+}
+```
 
 Note: the per-country datamaps borders are ~2015-era.  Refresh them with `node scripts/sync-datamaps.js` (see `maps/datamaps/SOURCE.md`).
 
@@ -163,7 +243,7 @@ The `/qr` endpoint has the following query parameters:
 
 ## Dependencies and Installation
 
-Requires Node.js >= 20.9.
+Requires Node.js >= 22.12 (the first release able to `require()` an ES module, which `d3-geo` is).
 
 Chart generation uses [node-canvas](https://github.com/Automattic/node-canvas).  Prebuilt binaries cover most platforms (Windows, macOS, glibc Linux); on Alpine/musl it compiles from source and needs Cairo, Pango, libjpeg, giflib, librsvg, and pixman development headers (see the `Dockerfile` for the exact package list).
 
@@ -226,6 +306,7 @@ This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 
 - **Chart.js 4 only.** The `version` parameter is accepted but ignored.  Chart.js 2-era plugins with no maintained successor were removed: `chartjs-plugin-piechart-outlabels`, `chartjs-plugin-doughnutlabel`, `chartjs-plugin-colorschemes` (the built-in Colors plugin provides default palettes), and `chartjs-chart-radial-gauge`.  The chart types `radialGauge`, `outlabeledPie`, and `outlabeledDoughnut` are no longer available.
 - **All sgratzl chart.js plugins added** (boxplot/violin, error bars, funnel, geo, graph, pcp, venn, wordcloud, hierarchical).
+- **Geo charts get bundled maps and aimable projections** — see [Geo charts and built-in maps](#geo-charts-and-built-in-maps).  Projections can be rotated/centered from plain JSON, are aimed automatically for built-in maps, and the view can be framed on an arbitrary region.
 - **Google Image Charts compatibility removed** (`/gchart` and `cht=` parameters).
 - **Graphviz rendering removed.**
 - **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.
