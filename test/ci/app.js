@@ -198,6 +198,26 @@ describe('api error handling and headers', () => {
     assert(res.headers['x-quickchart-error'].includes('Invalid input'));
   });
 
+  it('returns 400 for a progressBar without data', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: { type: 'progressBar' },
+      })
+      .expect(400);
+    assert(res.headers['x-quickchart-error'].includes('progressBar'));
+  });
+
+  it('returns 400 for a sparkline without data', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: { type: 'sparkline', data: { datasets: [{}] } },
+      })
+      .expect(400);
+    assert(res.headers['x-quickchart-error'].includes('sparkline'));
+  });
+
   it('returns 400 for an unknown chart type', async () => {
     const res = await request(app)
       .post('/chart')
