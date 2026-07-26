@@ -85,6 +85,13 @@ describe('datalabels default formatter', () => {
     );
   });
 
+  it('skips members that have no text form, rather than throwing on them', () => {
+    // A JS config can hold anything; a symbol throws when concatenated, and a
+    // function would print its whole source.
+    const datum = { min: 1, tag: Symbol('q'), fn: () => 1, n: 10n, ok: true };
+    assert.strictEqual(defaultFormatter(datum, context('boxplot')), 'min: 1, n: 10, ok: true');
+  });
+
   it('never renders an object member as "[object Object]"', () => {
     const nested = { feature: { properties: { name: 'x' } }, extra: { a: 1 } };
     assert.strictEqual(defaultFormatter(nested, context('bar')), null);
