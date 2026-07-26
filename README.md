@@ -152,8 +152,10 @@ Also accepted: `clipAngle`, `clipExtent`, `precision`, `angle`, `reflectX`, `ref
 "fit": { "bbox": [-25, 34, 45, 72] }                       // same thing
 "fit": { "map": "rus", "features": ["Amur", "Sakhalin"] }  // frame on named features
 "fit": { "map": "deu" }                                    // frame on a whole map
-"fit": { "type": "Polygon", "coordinates": [] }          // or inline GeoJSON
+"fit": { "type": "Polygon", "coordinates": [/* … */] }     // or inline GeoJSON
 ```
+
+West may exceed east for a box past the antimeridian: `[160, 62, -172, 72]` is Chukotka.  A `features` list may mix map feature names/ids with inline GeoJSON objects; anything else in it — a number, `null` — is rejected with a 400 rather than quietly framing nothing.
 
 A world choropleth cropped to Europe:
 
