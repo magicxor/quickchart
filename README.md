@@ -143,6 +143,8 @@ A projection name on its own cannot be pointed anywhere, and d3's default view i
 
 Also accepted: `clipAngle`, `clipExtent`, `precision`, `angle`, `reflectX`, `reflectY`.  `scale` and `translate` are not — the fit to the chart area overwrites both; use `projectionScale` (zoom factor) and `projectionOffset` (`[dx, dy]` in pixels) on the scale itself, plus `padding`, to nudge the result.
 
+Mind the doubled name: the scale is `options.scales.projection`, and the projection it uses is that scale's own `projection` option.  Aiming options written one level too high (`scales.projection.rotate`) or on the dataset are rejected with a 400 rather than silently ignored.
+
 `auto` rotates to the outline's centroid meridian and picks conic standard parallels from its latitude range, falling back to `equalEarth` for near-global outlines and `albersUsa` for the US maps.  **It is the default whenever a chart uses a built-in map and does not name a projection of its own**, so `{"map": "rus"}` renders a correctly framed Russia with no options at all.  `GET /maps?name=<map>` reports the exact spec `auto` would choose, so you can copy it and adjust.
 
 **2. `fit`** — the region the view is framed on, independent of what is drawn.  Everything outside the chart area is clipped (`clipMap`, on by default), so this is how you crop a big map down to one region:

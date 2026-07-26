@@ -427,6 +427,11 @@ describe('projection wiring', () => {
       // Structurally valid, measures to nothing.
       [{ fit: { type: 'Feature' } }, 'no measurable extent'],
       [{ fit: { type: 'Polygon', coordinates: [] } }, 'no measurable extent'],
+      // Aiming options one level too high - the scale and its projection option
+      // share a name, so this is the obvious mistake to make. chart.js drops
+      // unknown scale options without a word.
+      [{ rotate: [-100, 0], parallels: [50, 70] }, 'inside its "projection" option'],
+      [{ center: [0, 65] }, 'center'],
     ];
     for (const [scaleOptions, fragment] of cases) {
       // eslint-disable-next-line no-await-in-loop
@@ -447,6 +452,24 @@ describe('projection wiring', () => {
     const box = await inkBox(choropleth('rus', [{ feature: 'Tomsk', value: 10 }], { padding: 4 }));
     assert(box.width > 0.9, `width ${box.width}`);
     assert(box.height > 0.5, `height ${box.height}`);
+  });
+
+  it('rejects scale options put on the dataset instead', async () => {
+    for (const key of ['fit', 'projection']) {
+      const chart = {
+        type: 'choropleth',
+        data: { datasets: [{ map: 'world', data: [], [key]: 'mercator' }] },
+      };
+      // eslint-disable-next-line no-await-in-loop
+      await assert.rejects(
+        renderChartJs(200, 150, '#fff', 1, '4', 'png', chart),
+        (err) =>
+          err instanceof ChartInputError &&
+          err.statusCode === 400 &&
+          err.message.includes(`options.scales.projection.${key}`),
+        `expected a 400 for a dataset-level "${key}"`,
+      );
+    }
   });
 
   it('accepts inline GeoJSON in a fit feature list, alongside names', async () => {
