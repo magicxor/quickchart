@@ -290,6 +290,9 @@ describe('maps endpoint and named-map charts', () => {
       .expect(200);
     assert.strictEqual(res.body.name, 'us-states');
     assert(res.body.features.some((f) => f.name === 'California'));
+    // Enough to aim a projection without downloading the map.
+    assert.strictEqual(res.body.bbox.length, 4);
+    assert.deepStrictEqual(res.body.projection, { type: 'albersUsa' });
   });
 
   it('returns 400 for describing an unknown map', async () => {

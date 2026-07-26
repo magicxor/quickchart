@@ -2,7 +2,14 @@
 
 const assert = require('assert');
 
-const { getMap, resolveOutline, matchFeature, listMaps, describeMap } = require('../../lib/maps');
+const {
+  getMap,
+  getMapGeography,
+  resolveOutline,
+  matchFeature,
+  listMaps,
+  describeMap,
+} = require('../../lib/maps');
 const { ChartInputError } = require('../../lib/errors');
 
 describe('map registry', () => {
@@ -81,5 +88,22 @@ describe('map registry', () => {
     const berlin = description.features.find((f) => f.name === 'Berlin');
     assert(berlin, 'expected a Berlin feature');
     assert.strictEqual(berlin.id, 'DE.BE');
+  });
+
+  it('describes where a map is and how to aim at it', () => {
+    const russia = describeMap('rus');
+    // east < west: the map wraps past the antimeridian.
+    assert(russia.bbox[2] < russia.bbox[0], `bbox ${russia.bbox}`);
+    assert(Math.abs(russia.centroid[0] - 95.8) < 1, `centroid ${russia.centroid}`);
+    assert.strictEqual(russia.projection.type, 'conicEqualArea');
+    // The reported spec is exactly what a caller can paste into a config.
+    assert(Array.isArray(russia.projection.rotate));
+
+    assert.deepStrictEqual(describeMap('world').projection, { type: 'equalEarth' });
+    assert.deepStrictEqual(describeMap('us-states').projection, { type: 'albersUsa' });
+  });
+
+  it('caches a map’s geography', () => {
+    assert.strictEqual(getMapGeography('deu'), getMapGeography('DEU'));
   });
 });
