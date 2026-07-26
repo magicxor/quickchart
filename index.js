@@ -1,7 +1,6 @@
 const path = require('path');
 
 const express = require('express');
-const javascriptStringify = require('javascript-stringify').stringify;
 const qs = require('qs');
 const rateLimit = require('express-rate-limit');
 const text2png = require('text2png');
@@ -11,8 +10,6 @@ const telemetry = require('./telemetry');
 const { getPdfBufferFromPng, getPdfBufferWithText } = require('./lib/pdf');
 const { logger } = require('./logging');
 const { renderChartJs } = require('./lib/charts');
-const { renderGraphviz } = require('./lib/graphviz');
-const { toChartJs, parseSize } = require('./lib/google_image_charts');
 const { renderQr, DEFAULT_QR_SIZE } = require('./lib/qr');
 
 const app = express();
@@ -218,119 +215,7 @@ function doChartjsRender(req, res, opts) {
     });
 }
 
-async function handleGraphviz(req, res, graphVizDef, opts) {
-  try {
-    const buf = await renderGraphviz(req.query.chl, opts);
-    res
-      .status(200)
-      .type(opts.format === 'png' ? 'image/png' : 'image/svg+xml')
-      .end(buf);
-  } catch (err) {
-    if (opts.format === 'png') {
-      failPng(res, `Graph Error: ${err}`);
-    } else {
-      failSvg(res, `Graph Error: ${err}`);
-    }
-  }
-}
-
-function handleGChart(req, res) {
-  // TODO(ian): Move these special cases into Google Image Charts-specific
-  // handler.
-  if (req.query.cht.startsWith('gv')) {
-    // Graphviz chart
-    const format = req.query.chof;
-    const engine = req.query.cht.indexOf(':') > -1 ? req.query.cht.split(':')[1] : 'dot';
-    const opts = {
-      format,
-      engine,
-    };
-    if (req.query.chs) {
-      const size = parseSize(req.query.chs);
-      opts.width = size.width;
-      opts.height = size.height;
-    }
-    handleGraphviz(req, res, req.query.chl, opts);
-    return;
-  } else if (req.query.cht === 'qr') {
-    const size = parseInt(req.query.chs.split('x')[0], 10);
-    const qrData = req.query.chl;
-    const chldVals = (req.query.chld || '').split('|');
-    const ecLevel = chldVals[0] || 'L';
-    const margin = chldVals[1] || 4;
-    const qrOpts = {
-      margin: margin,
-      width: size,
-      errorCorrectionLevel: ecLevel,
-    };
-
-    const format = 'png';
-    const encoding = 'UTF-8';
-    renderQr(format, encoding, qrData, qrOpts)
-      .then((buf) => {
-        res.writeHead(200, {
-          'Content-Type': format === 'png' ? 'image/png' : 'image/svg+xml',
-          'Content-Length': buf.length,
-
-          // 1 week cache
-          'Cache-Control': isDev ? 'no-cache' : 'public, max-age=604800',
-        });
-        res.end(buf);
-      })
-      .catch((err) => {
-        failPng(res, err);
-      });
-
-    telemetry.count('qrCount');
-    return;
-  }
-
-  let converted;
-  try {
-    converted = toChartJs(req.query);
-  } catch (err) {
-    logger.error(`GChart error: Could not interpret ${req.originalUrl}`);
-    res.status(500).end('Sorry, this chart configuration is not supported right now');
-    return;
-  }
-
-  if (req.query.format === 'chartjs-config') {
-    // Chart.js config
-    res.writeHead(200, {
-      'Content-Type': 'application/json',
-    });
-    res.end(javascriptStringify(converted.chart, undefined, 2));
-    return;
-  }
-
-  renderChartJs(
-    converted.width,
-    converted.height,
-    converted.backgroundColor,
-    1.0 /* devicePixelRatio */,
-    '2.9.4' /* version */,
-    undefined /* format */,
-    converted.chart,
-  ).then((buf) => {
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': buf.length,
-
-      // 1 week cache
-      'Cache-Control': isDev ? 'no-cache' : 'public, max-age=604800',
-    });
-    res.end(buf);
-  });
-  telemetry.count('chartCount');
-}
-
 app.get('/chart', (req, res) => {
-  if (req.query.cht) {
-    // This is a Google Image Charts-compatible request.
-    handleGChart(req, res);
-    return;
-  }
-
   const outputFormat = (req.query.f || req.query.format || 'png').toLowerCase();
   const opts = {
     chart: req.query.c || req.query.chart,
@@ -428,8 +313,6 @@ app.get('/qr', (req, res) => {
 
   telemetry.count('qrCount');
 });
-
-app.get('/gchart', handleGChart);
 
 app.get('/healthcheck', (req, res) => {
   // A lightweight healthcheck endpoint.

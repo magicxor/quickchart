@@ -1,7 +1,6 @@
 /* eslint-env node, mocha */
 
 const assert = require('assert');
-const crypto = require('crypto');
 
 const getColors = require('get-image-colors');
 const imageSize = require('image-size');
@@ -212,52 +211,4 @@ describe('qr endpoint', () => {
       });
   });
 
-  it('renders basic qr - google image charts compatible', done => {
-    const qrPublicUrl = '/chart?chs=300x300&cht=qr&chl=Hola mundo&choe=UTF-8&chld=M|10';
-    request(app)
-      .get(qrPublicUrl)
-      .expect('Content-Type', 'image/png')
-      .expect(200)
-      .end(async (err, res) => {
-        const dimensions = imageSize(res.body);
-        assert.equal(300, dimensions.width);
-        assert.equal(300, dimensions.height);
-
-        const result = await getQrValue(res.body);
-        assert.equal('Hola mundo', result);
-        done();
-      });
-  });
-});
-
-describe('graphviz endpoint', () => {
-  it('renders graphviz png', done => {
-    const graphStr =
-      'digraph{C_0[shape=box];C_0->H_0[type=s];C_0->H_1[type=s];C_0->H_2[type=s];C_0->C_1[type=s];C_1->H_3[type=s];C_1->H_4[type=s];C_1->H_5[color=blue]}';
-    const url = `/chart?cht=gv&chl=${graphStr}&chs=500x200&chof=png`;
-    request(app)
-      .get(url)
-      .expect('Content-Type', 'image/png')
-      .expect(200)
-      .end((err, res) => {
-        const dimensions = imageSize(res.body);
-        assert.equal(500, dimensions.width);
-        assert.equal(200, dimensions.height);
-        done();
-      });
-  });
-
-  it('renders graphviz svg', done => {
-    const graphStr =
-      'digraph{C_0[shape=box];C_0->H_0[type=s];C_0->H_1[type=s];C_0->H_2[type=s];C_0->C_1[type=s];C_1->H_3[type=s];C_1->H_4[type=s];C_1->H_5[color=blue]}';
-    const url = `/chart?cht=gv&chl=${graphStr}`;
-    request(app)
-      .get(url)
-      .expect('Content-Type', 'image/svg+xml')
-      .expect(200)
-      .end((err, res) => {
-        assert(res.body.indexOf('<g id="node2" class="node">') > -1);
-        done();
-      });
-  });
 });
