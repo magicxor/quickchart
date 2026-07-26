@@ -39,3 +39,8 @@ jobs:
 
       - name: Run E2E tests
         run: npm run test:e2e
+        env:
+          # The Ryuk cleanup sidecar needs a Docker Hub pull on every run - a
+          # recurring source of network/rate-limit flakes. CI runners are
+          # ephemeral and the suite stops its container itself, so skip it.
+          TESTCONTAINERS_RYUK_DISABLED: 'true'
