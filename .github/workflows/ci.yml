@@ -38,7 +38,15 @@ jobs:
         run: npm ci
 
       - name: Run E2E tests
-        run: npm run test:e2e
+        # Docker Hub pulls from shared runners flake regularly (timeouts, rate
+        # limits) and testcontainers hides the underlying build error. Retry
+        # once; the retry reuses cached layers and runs with debug logging so
+        # a genuine failure is diagnosable from the job log.
+        run: |
+          npm run test:e2e || {
+            echo "::warning::E2E suite failed once; retrying with testcontainers debug logging"
+            DEBUG='testcontainers*' npm run test:e2e
+          }
         env:
           # The Ryuk cleanup sidecar needs a Docker Hub pull on every run - a
           # recurring source of network/rate-limit flakes. CI runners are
