@@ -167,7 +167,7 @@ This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 - **Graphviz rendering removed.**
 - **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.
 - **Telemetry is opt-in** (`ENABLE_TELEMETRY`); the `POST /telemetry` aggregation endpoint is removed.
-- Express 5, pino logging, node-canvas 3, npm instead of yarn, Node 24 Docker base image, and a Docker-based E2E test suite.
+- Express 5, pino logging, node-canvas 3, npm instead of yarn, Node 26 Docker base image, and a Docker-based E2E test suite.
 
 ## License
 
