@@ -158,6 +158,15 @@ describe('charts.js', () => {
     );
   });
 
+  it('keeps user-provided labels on progress bars', async () => {
+    const chart = clone(charts.CHART_PROGRESSBAR);
+    chart.data.labels = ['My progress'];
+    const buf = await chartsLib.renderChartJs(500, 50, 'red', 2.0, undefined, 'png', chart);
+    assert(buf.length > 0);
+    // renderChartJs mutates its input; the labels must survive the transform.
+    assert.deepStrictEqual(['My progress'], chart.data.labels);
+  });
+
   it('renders a datetime chart with the moment adapter', async () => {
     const buf = await chartsLib.renderChartJs(
       200,
