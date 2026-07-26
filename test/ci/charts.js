@@ -158,6 +158,28 @@ describe('charts.js', () => {
     );
   });
 
+  it('gives sparklines a y range that contains negative data', async () => {
+    const chart = {
+      type: 'sparkline',
+      data: { datasets: [{ data: [-100, -50, -75] }] },
+    };
+    const buf = await chartsLib.renderChartJs(200, 100, 'white', 1.0, undefined, 'png', chart);
+    assert(buf.length > 0);
+    // renderChartJs mutates its input; the derived scale must contain the data.
+    assert(chart.options.scales.y.min <= -100, `scale min ${chart.options.scales.y.min}`);
+    assert(chart.options.scales.y.max >= -50, `scale max ${chart.options.scales.y.max}`);
+  });
+
+  it('renders a flat sparkline with a non-degenerate y range', async () => {
+    const chart = {
+      type: 'sparkline',
+      data: { datasets: [{ data: [5, 5, 5] }] },
+    };
+    const buf = await chartsLib.renderChartJs(200, 100, 'white', 1.0, undefined, 'png', chart);
+    assert(buf.length > 0);
+    assert(chart.options.scales.y.min < chart.options.scales.y.max);
+  });
+
   it('keeps user-provided labels on progress bars', async () => {
     const chart = clone(charts.CHART_PROGRESSBAR);
     chart.data.labels = ['My progress'];
