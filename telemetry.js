@@ -1,7 +1,5 @@
 const fs = require('fs');
 
-const fetch = require('node-fetch');
-
 const { logger } = require('./logging');
 
 const TELEMETRY_PATH = 'telemetry.log';
@@ -54,30 +52,35 @@ function send() {
     chartCount: telemetry[PROCESS_ID].chartCount,
     qrCount: telemetry[PROCESS_ID].qrCount,
   };
-  try {
-    fetch('https://quickchart.io/telemetry', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      headers: {
-        'content-type': 'application/json',
-      },
-    });
-  } catch (err) {}
+  // Fire-and-forget; swallow async rejections (a try/catch would not catch them).
+  fetch('https://quickchart.io/telemetry', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: {
+      'content-type': 'application/json',
+    },
+  }).catch(() => {});
 
   telemetry = {};
 }
 
 if (process.env.ENABLE_TELEMETRY_WRITE) {
   logger.info('Telemetry writing is enabled');
-  setInterval(() => {
-    write();
-  }, 1000 * 60 * 60 * 1);
+  setInterval(
+    () => {
+      write();
+    },
+    1000 * 60 * 60 * 1,
+  );
 }
 if (!process.env.DISABLE_TELEMETRY) {
   logger.info('Telemetry is enabled');
-  setInterval(() => {
-    send();
-  }, 1000 * 60 * 60 * 12);
+  setInterval(
+    () => {
+      send();
+    },
+    1000 * 60 * 60 * 12,
+  );
 }
 
 module.exports = {

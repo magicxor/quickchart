@@ -13,9 +13,8 @@ RUN apk add --no-cache libimagequant-dev
 RUN apk add --no-cache vips-dev
 RUN apk add --no-cache --virtual .runtime-deps graphviz
 
-COPY package*.json .
-COPY yarn.lock .
-RUN yarn install --production
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 RUN apk update
 RUN rm -rf /var/cache/apk/* && \

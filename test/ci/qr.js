@@ -1,7 +1,7 @@
 /* eslint-env node, mocha */
 
 const assert = require('assert');
-const imageSize = require('image-size');
+const { imageSize } = require('image-size');
 
 const { renderQr, DEFAULT_QR_SIZE } = require('../../lib/qr');
 

@@ -1,21 +1,17 @@
-const Jimp = require('jimp');
-const qrReader = require('qrcode-reader');
+const { Jimp } = require('jimp');
+const QrReader = require('qrcode-reader');
 
-function getQrValue(buf) {
+async function getQrValue(buf) {
+  const image = await Jimp.read(buf);
   return new Promise((resolve, reject) => {
-    Jimp.read(buf, (err, image) => {
+    const qr = new QrReader();
+    qr.callback = (err, val) => {
       if (err) {
         return reject(err);
       }
-      const qr = new qrReader();
-      qr.callback = (err, val) => {
-        if (err) {
-          return reject(err);
-        }
-        resolve(val.result);
-      };
-      qr.decode(image.bitmap);
-    });
+      return resolve(val.result);
+    };
+    qr.decode(image.bitmap);
   });
 }
 

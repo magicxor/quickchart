@@ -3,7 +3,7 @@
 const assert = require('assert');
 
 const getColors = require('get-image-colors');
-const imageSize = require('image-size');
+const { imageSize } = require('image-size');
 const request = require('supertest');
 
 const app = require('../../index');
@@ -12,7 +12,7 @@ const { assertSimilarRgb } = require('./color_helpers');
 const { getQrValue } = require('./qr_helpers');
 
 describe('chart request', () => {
-  it('returns a basic chart via GET', done => {
+  it('returns a basic chart via GET', (done) => {
     request(app)
       .get(`/chart?c=${encodeURIComponent(JSON.stringify(BASIC_CHART))}`)
       .expect('Content-Type', 'image/png')
@@ -25,7 +25,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns a basic chart via GET, base64 encoded', done => {
+  it('returns a basic chart via GET, base64 encoded', (done) => {
     request(app)
       .get(
         `/chart?c=${Buffer.from(JSON.stringify(BASIC_CHART)).toString('base64')}&encoding=base64`,
@@ -40,7 +40,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns an JS chart via GET', done => {
+  it('returns an JS chart via GET', (done) => {
     request(app)
       .get(`/chart?c=${encodeURIComponent(JS_CHART)}`)
       .expect('Content-Type', 'image/png')
@@ -53,7 +53,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns a basic chart via GET with parameters', done => {
+  it('returns a basic chart via GET with parameters', (done) => {
     request(app)
       .get(
         `/chart?c=${encodeURIComponent(
@@ -73,7 +73,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns a basic chart via POST', done => {
+  it('returns a basic chart via POST', (done) => {
     request(app)
       .post('/chart')
       .send({
@@ -89,7 +89,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns a basic chart via POST, base64 encoded', done => {
+  it('returns a basic chart via POST, base64 encoded', (done) => {
     request(app)
       .post('/chart')
       .send({
@@ -106,7 +106,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns an advanced chart via POST', done => {
+  it('returns an advanced chart via POST', (done) => {
     request(app)
       .post('/chart')
       .send({
@@ -122,7 +122,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns an advanced chart via POST with parameters', done => {
+  it('returns an advanced chart via POST with parameters', (done) => {
     request(app)
       .post('/chart')
       .send({
@@ -145,7 +145,7 @@ describe('chart request', () => {
       });
   });
 
-  it('returns an advanced chart via POST with parameters and base 64', done => {
+  it('returns an advanced chart via POST with parameters and base 64', (done) => {
     request(app)
       .post('/chart')
       .send({
@@ -169,7 +169,7 @@ describe('chart request', () => {
       });
   });
 
-  it('reverts correctly to background transparency', done => {
+  it('reverts correctly to background transparency', (done) => {
     // Don't let background selection stick between requests.
     request(app)
       .post('/chart')
@@ -193,7 +193,7 @@ describe('chart request', () => {
 });
 
 describe('qr endpoint', () => {
-  it('renders basic qr', done => {
+  it('renders basic qr', (done) => {
     const qrText = 'hello werld';
     const qrPublicUrl = `/qr?text=${encodeURIComponent(qrText)}`;
     request(app)
@@ -210,5 +210,4 @@ describe('qr endpoint', () => {
         done();
       });
   });
-
 });

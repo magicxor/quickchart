@@ -2,8 +2,7 @@ const path = require('path');
 
 const express = require('express');
 const qs = require('qs');
-const rateLimit = require('express-rate-limit');
-const text2png = require('text2png');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 const packageJson = require('./package.json');
 const telemetry = require('./telemetry');
@@ -11,6 +10,7 @@ const { getPdfBufferFromPng, getPdfBufferWithText } = require('./lib/pdf');
 const { logger } = require('./logging');
 const { renderChartJs } = require('./lib/charts');
 const { renderQr, DEFAULT_QR_SIZE } = require('./lib/qr');
+const { renderTextToPng } = require('./lib/text');
 
 const app = express();
 
@@ -32,7 +32,7 @@ app.use(
   }),
 );
 
-app.use(express.urlencoded());
+app.use(express.urlencoded({ extended: true }));
 
 if (process.env.RATE_LIMIT_PER_MIN) {
   const limitMax = parseInt(process.env.RATE_LIMIT_PER_MIN, 10);
@@ -40,14 +40,18 @@ if (process.env.RATE_LIMIT_PER_MIN) {
 
   const limiter = rateLimit({
     windowMs: 60 * 1000,
-    max: limitMax,
+    limit: limitMax,
     message:
       'Please slow down your requests! This is a shared public endpoint. Email support@quickchart.io or go to https://quickchart.io/pricing/ for rate limit exceptions or to purchase a commercial license.',
-    onLimitReached: (req) => {
+    handler: (req, res, next, options) => {
       logger.info('User hit rate limit!', req.ip);
+      res.status(options.statusCode).send(options.message);
     },
     keyGenerator: (req) => {
-      return req.headers['x-forwarded-for'] || req.ip;
+      const forwardedFor = req.headers['x-forwarded-for'];
+      const ip = forwardedFor ? String(forwardedFor).split(',')[0].trim() : req.ip;
+      // ipKeyGenerator normalizes the address and masks IPv6 to a subnet.
+      return ipKeyGenerator(ip);
     },
   });
   app.use('/chart', limiter);
@@ -96,7 +100,7 @@ function failPng(res, msg, statusCode = 500) {
     'X-quickchart-error': sanitizeErrorHeader(msg),
   });
   res.end(
-    text2png(`Chart Error: ${msg}`, {
+    renderTextToPng(`Chart Error: ${msg}`, {
       padding: 10,
       backgroundColor: '#fff',
     }),
@@ -140,8 +144,7 @@ function renderChartToPng(req, res, opts) {
         // 1 week cache
         'Cache-Control': isDev ? 'no-cache' : 'public, max-age=604800',
       })
-      .send(buf)
-      .end();
+      .send(buf);
   };
   doChartjsRender(req, res, opts);
 }
@@ -155,8 +158,7 @@ function renderChartToSvg(req, res, opts) {
         // 1 week cache
         'Cache-Control': isDev ? 'no-cache' : 'public, max-age=604800',
       })
-      .send(buf)
-      .end();
+      .send(buf);
   };
   doChartjsRender(req, res, opts);
 }

@@ -3,7 +3,7 @@
 const assert = require('assert');
 
 const getColors = require('get-image-colors');
-const imageSize = require('image-size');
+const { imageSize } = require('image-size');
 
 const chartsLib = require('../../lib/charts');
 const charts = require('./chart_helpers');
