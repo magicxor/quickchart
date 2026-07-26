@@ -79,8 +79,14 @@ function sanitizeErrorHeader(msg) {
   return '';
 }
 
+// Error messages can embed user-supplied input (configs, QR data). Truncate at
+// the source so response headers stay within header-size limits and SVG/PDF
+// error bodies stay small; the PNG renderer additionally clamps its canvas.
+const MAX_ERROR_TEXT_LENGTH = 1000;
+
 function errorText(msg) {
-  return msg instanceof Error ? msg.message : String(msg);
+  const text = msg instanceof Error ? msg.message : String(msg);
+  return text.length > MAX_ERROR_TEXT_LENGTH ? `${text.slice(0, MAX_ERROR_TEXT_LENGTH)}...` : text;
 }
 
 function escapeXml(str) {
