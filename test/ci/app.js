@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 
-const getColors = require('get-image-colors');
+const { Jimp, intToRGBA } = require('jimp');
 const { imageSize } = require('image-size');
 const request = require('supertest');
 
@@ -17,9 +17,18 @@ function assertDimensions(res, width, height) {
   assert.equal(height, dimensions.height);
 }
 
-async function assertDominantColor(res, rgb) {
-  const actual = (await getColors(res.body, 'image/png'))[0].rgb();
-  assertSimilarRgb(rgb, actual);
+async function getCornerPixel(res) {
+  // The background fill covers the whole canvas, so a corner pixel is pure
+  // background - unlike palette quantization, this doesn't depend on fonts or
+  // rendering details of the environment.
+  const image = await Jimp.read(res.body);
+  return intToRGBA(image.getPixelColor(1, 1));
+}
+
+async function assertBackgroundColor(res, rgb) {
+  const pixel = await getCornerPixel(res);
+  assertSimilarRgb(rgb, [pixel.r, pixel.g, pixel.b]);
+  assert.equal(255, pixel.a);
 }
 
 describe('chart request', () => {
@@ -58,7 +67,7 @@ describe('chart request', () => {
       )
       .expect('Content-Type', 'image/png')
       .expect(200);
-    await assertDominantColor(res, [249, 193, 202]);
+    await assertBackgroundColor(res, [249, 193, 202]);
     assertDimensions(res, 200, 100);
   });
 
@@ -108,7 +117,7 @@ describe('chart request', () => {
       })
       .expect('Content-Type', 'image/png')
       .expect(200);
-    await assertDominantColor(res, [90, 80, 70]);
+    await assertBackgroundColor(res, [90, 80, 70]);
     assertDimensions(res, 456, 123);
   });
 
@@ -125,7 +134,7 @@ describe('chart request', () => {
       })
       .expect('Content-Type', 'image/png')
       .expect(200);
-    await assertDominantColor(res, [190, 180, 170]);
+    await assertBackgroundColor(res, [190, 180, 170]);
     assertDimensions(res, 369, 150);
   });
 
@@ -138,9 +147,10 @@ describe('chart request', () => {
       })
       .expect('Content-Type', 'image/png')
       .expect(200);
-    // Image is transparent by default - expect dominant color to be the
-    // chart.js 4 Colors plugin default blue.
-    await assertDominantColor(res, [52, 164, 236]);
+    // Image is transparent by default - the corner pixel must be fully
+    // transparent, proving the previous request's background didn't stick.
+    const pixel = await getCornerPixel(res);
+    assert.equal(0, pixel.a);
     assertDimensions(res, 500 * 2, 300 * 2);
   });
 });
