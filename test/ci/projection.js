@@ -209,6 +209,13 @@ describe('projection fit geometry', () => {
     assert(Math.abs((x1 - x0) / (y1 - y0) - 20 / 12) < 0.05, `aspect ${(x1 - x0) / (y1 - y0)}`);
   });
 
+  it('names "fit" in the bbox error, not just "bbox"', () => {
+    // A bare 4-number array is accepted as a fit, so a caller may never have
+    // written the word "bbox" at all.
+    assertInputError(() => bboxOutline([1, 2, 3]), 'Projection "fit" bbox');
+    assertInputError(() => bboxOutline([1, 2, 'x', 4]), 'Projection "fit" bbox');
+  });
+
   it('rejects malformed boxes', () => {
     assertInputError(() => bboxOutline([1, 2, 3]), 'bbox');
     assertInputError(() => bboxOutline([0, 34, 10, 34]), 'south < north');
@@ -432,6 +439,12 @@ describe('projection wiring', () => {
       // unknown scale options without a word.
       [{ rotate: [-100, 0], parallels: [50, 70] }, 'inside its "projection" option'],
       [{ center: [0, 65] }, 'center'],
+      // A fit map name that is not a name. String() would have turned these into
+      // "null"/"[object Object]" and blamed a missing map - and ['rus'] would
+      // have coerced to "rus" and quietly worked.
+      [{ fit: { map: null } }, 'must be a map name; got null'],
+      [{ fit: { map: 42 } }, 'got number'],
+      [{ fit: { map: ['rus'] } }, 'got array'],
     ];
     for (const [scaleOptions, fragment] of cases) {
       // eslint-disable-next-line no-await-in-loop
@@ -500,6 +513,33 @@ describe('projection wiring', () => {
     assert(cropped.width > whole.width * 3, `${cropped.width} cropped vs ${whole.width}`);
   });
 
+  it('rejects a projection scale that is not a scale options object', async () => {
+    // `typeof [] === 'object'`, so an array used to pass for a scale and collect
+    // the options filled in here, while chart.js merely logged "Invalid scale
+    // configuration" and rendered a chart with no map on it.
+    for (const value of [[], 42, 'x', true]) {
+      const chart = {
+        type: 'choropleth',
+        data: { datasets: [{ map: 'world', data: [] }] },
+        options: { scales: { projection: value, color: { axis: 'x' } } },
+      };
+      // eslint-disable-next-line no-await-in-loop
+      await assert.rejects(
+        renderChartJs(200, 150, '#fff', 1, '4', 'png', chart),
+        (err) =>
+          err instanceof ChartInputError &&
+          err.statusCode === 400 &&
+          err.message.includes('must be a scale options object'),
+        `expected a 400 for scales.projection = ${JSON.stringify(value)}`,
+      );
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(value, 'projection'),
+        false,
+        'must not attach options to a non-object scale',
+      );
+    }
+  });
+
   it('leaves a projection the caller declined to name to the library default', async () => {
     // An inline-outline chart naming no projection is not a QuickChart concern:
     // chartjs-chart-geo's own default applies and must not be second-guessed.
@@ -551,6 +591,39 @@ describe('geometry measurement', () => {
     assert.strictEqual(describeGeometry({ type: 'LineString', coordinates: [] }), null);
     assert.deepStrictEqual(autoProjectionSpec({ type: 'Polygon', coordinates: [] }, null), {
       type: 'equalEarth',
+    });
+  });
+
+  it('ignores a member whose coordinates are not an array', () => {
+    // The measurable feature carries the centroid past the finite-check, so the
+    // walk does reach the malformed sibling. d3 tolerates it (it ignores
+    // `coordinates` on a Sphere entirely), so the walk must too - otherwise a
+    // bare TypeError escapes as a 500.
+    const square = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [0, 10],
+            [10, 10],
+            [10, 0],
+            [0, 0],
+          ],
+        ],
+      },
+    };
+    const expected = autoProjectionSpec({ type: 'FeatureCollection', features: [square] }, null);
+    [{}, 'x', 42].forEach((coordinates) => {
+      const spec = autoProjectionSpec(
+        {
+          type: 'FeatureCollection',
+          features: [square, { type: 'Feature', geometry: { type: 'Sphere', coordinates } }],
+        },
+        null,
+      );
+      assert.deepStrictEqual(spec, expected, `coordinates: ${JSON.stringify(coordinates)}`);
     });
   });
 });
