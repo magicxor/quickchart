@@ -2,7 +2,9 @@
 
 const assert = require('assert');
 const d3geo = require('d3-geo');
+const { Jimp } = require('jimp');
 
+const { renderChartJs } = require('../../lib/charts');
 const { getMap } = require('../../lib/maps');
 const {
   PROJECTION_NAMES,
@@ -200,6 +202,184 @@ describe('projection fit geometry', () => {
     assertInputError(() => bboxOutline([0, -95, 10, 10]), 'south < north');
     assertInputError(() => bboxOutline([0, 0, 0, 10]), 'positive longitude range');
     assertInputError(() => bboxOutline(['a', 0, 10, 10]), 'bbox');
+  });
+});
+
+const CANVAS = { width: 400, height: 300 };
+
+// Grey borders, i.e. the map as a whole.
+const ANY_INK = (r, g, b) => r < 250 || g < 250 || b < 250;
+// The blue fill the color scale gives a data row, i.e. one named feature. The
+// scale's own legend is blue too, but it lives outside the scanned region.
+const DATA_FILL = (r, g, b) => b - r > 40;
+
+/**
+ * Renders a chart and measures the bounding box of the pixels `matches`
+ * accepts, as a fraction of the canvas. The right quarter is skipped: the
+ * color/size scale draws its legend there, which would pin the box to the edge
+ * no matter how badly the map itself is framed.
+ */
+async function measure(chart, matches) {
+  const buf = await renderChartJs(CANVAS.width, CANVAS.height, '#ffffff', 1, '4', 'png', chart);
+  const { bitmap } = await Jimp.read(buf);
+  const scanWidth = Math.floor(bitmap.width * 0.75);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (let y = 0; y < bitmap.height; y += 1) {
+    for (let x = 0; x < scanWidth; x += 1) {
+      const offset = (y * bitmap.width + x) * 4;
+      if (matches(bitmap.data[offset], bitmap.data[offset + 1], bitmap.data[offset + 2])) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  if (minX === Infinity) {
+    return { width: 0, height: 0 };
+  }
+  return {
+    width: (maxX - minX + 1) / scanWidth,
+    height: (maxY - minY + 1) / bitmap.height,
+  };
+}
+
+const inkBox = (chart) => measure(chart, ANY_INK);
+const filledBox = (chart) => measure(chart, DATA_FILL);
+
+function choropleth(map, rows, projectionScale) {
+  const chart = { type: 'choropleth', data: { datasets: [{ map, data: rows }] } };
+  if (projectionScale) {
+    chart.options = {
+      scales: { projection: { axis: 'x', ...projectionScale }, color: { axis: 'x' } },
+    };
+  }
+  return chart;
+}
+
+describe('projection wiring', () => {
+  it('frames an antimeridian-crossing map with no configuration at all', async () => {
+    const rows = [{ feature: 'Tomsk', value: 10 }];
+    const auto = await inkBox(choropleth('rus', rows));
+    // The pre-auto default: Russia's bbox wraps past 180, so the fit spans the
+    // globe and the country lands in a corner.
+    const fixed = await inkBox(choropleth('rus', rows, { projection: 'equalEarth' }));
+
+    assert(auto.width > 0.9, `auto width ${auto.width}`);
+    assert(auto.height > 0.5, `auto height ${auto.height}`);
+    assert(fixed.height < auto.height / 2, `fixed height ${fixed.height} vs auto ${auto.height}`);
+  });
+
+  it('uses the composite projection for the US maps', async () => {
+    const box = await inkBox(choropleth('us-states', [{ feature: 'Texas', value: 10 }]));
+    // albersUsa insets Alaska and Hawaii instead of stranding them mid-Pacific.
+    assert(box.width > 0.9, `width ${box.width}`);
+    assert(box.height > 0.5, `height ${box.height}`);
+  });
+
+  it('accepts an aimed projection object from a JSON config', async () => {
+    const rows = [{ feature: 'Tomsk', value: 10 }];
+    const box = await inkBox(
+      choropleth('rus', rows, {
+        projection: {
+          type: 'conicEqualArea',
+          rotate: [-100, 0],
+          center: [0, 65],
+          parallels: [50, 70],
+        },
+      }),
+    );
+    assert(box.width > 0.9, `width ${box.width}`);
+    assert(box.height > 0.5, `height ${box.height}`);
+  });
+
+  it('frames the map on a bounding box and clips the rest', async () => {
+    const rows = [{ feature: 'Germany', value: 8 }];
+    const projection = {
+      type: 'conicEqualArea',
+      rotate: [-10, 0],
+      center: [0, 53],
+      parallels: [43, 63],
+    };
+    // The whole world is still drawn either way - what `fit` changes is how
+    // much of the canvas the region of interest gets. Everything outside is
+    // cut by the controller's clipMap.
+    const cropped = await filledBox(
+      choropleth('world', rows, { projection, fit: { bbox: [-25, 34, 45, 72] } }),
+    );
+    const whole = await filledBox(choropleth('world', rows, { projection }));
+
+    assert(cropped.width > whole.width * 3, `Germany: ${cropped.width} cropped vs ${whole.width}`);
+    assert(
+      cropped.height > whole.height * 3,
+      `Germany: ${cropped.height} cropped vs ${whole.height}`,
+    );
+  });
+
+  it('frames the map on a subset of a map’s features', async () => {
+    const rows = [{ feature: 'Amur', value: 10 }];
+    const cropped = await filledBox(
+      choropleth('rus', rows, {
+        projection: {
+          type: 'conicEqualArea',
+          rotate: [-140, 0],
+          center: [0, 62],
+          parallels: [52, 70],
+        },
+        fit: { map: 'rus', features: ['Sakha (Yakutia)', 'Khabarovsk', 'Amur', 'Kamchatka'] },
+      }),
+    );
+    const whole = await filledBox(choropleth('rus', rows));
+    assert(cropped.width > whole.width * 3, `Amur: ${cropped.width} cropped vs ${whole.width}`);
+  });
+
+  it('accepts a bare bbox array', async () => {
+    const rows = [{ feature: 'Brazil', value: 8 }];
+    const projection = {
+      type: 'conicEqualArea',
+      rotate: [-55, 0],
+      center: [0, -15],
+      parallels: [-30, 0],
+    };
+    const cropped = await filledBox(
+      choropleth('world', rows, { projection, fit: [-75, -35, -33, 6] }),
+    );
+    const whole = await filledBox(choropleth('world', rows, { projection }));
+    assert(cropped.width > whole.width * 3, `Brazil: ${cropped.width} cropped vs ${whole.width}`);
+  });
+
+  it('reports bad projection input as a 400 rather than rendering something wrong', async () => {
+    const cases = [
+      [{ projection: 'winkelTripel' }, 'Unknown projection'],
+      [{ projection: { type: 'mercator', rotation: 1 } }, 'rotation'],
+      [{ projection: { type: 'albersUsa', rotate: [1, 0] } }, 'does not support'],
+      [{ fit: [1, 2, 3] }, 'bbox'],
+      [{ fit: { map: 'world', features: ['Atlantis'] } }, 'Unknown feature'],
+      [{ fit: 'europe' }, 'Projection "fit"'],
+    ];
+    for (const [scaleOptions, fragment] of cases) {
+      // eslint-disable-next-line no-await-in-loop
+      await assert.rejects(
+        renderChartJs(200, 150, '#fff', 1, '4', 'png', choropleth('world', [], scaleOptions)),
+        (err) =>
+          err instanceof ChartInputError &&
+          err.statusCode === 400 &&
+          err.message.includes(fragment),
+        `expected a 400 mentioning ${fragment}`,
+      );
+    }
+  });
+
+  it('leaves a named projection the user chose untouched', async () => {
+    const box = await inkBox(
+      choropleth('us-states', [{ feature: 'Texas', value: 10 }], { projection: 'albersUsa' }),
+    );
+    assert(box.width > 0.9, `width ${box.width}`);
   });
 });
 
