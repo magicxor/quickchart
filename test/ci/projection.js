@@ -220,6 +220,22 @@ describe('projection fit geometry', () => {
 
 const CANVAS = { width: 400, height: 300 };
 const CHUKOTKA = [{ feature: 'Chukchi Autonomous Okrug', value: 8 }];
+const SQUARE = {
+  type: 'Feature',
+  properties: { name: 'Square' },
+  geometry: {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [0, 0],
+        [0, 10],
+        [10, 10],
+        [10, 0],
+        [0, 0],
+      ],
+    ],
+  },
+};
 
 // Grey borders, i.e. the map as a whole.
 const ANY_INK = (r, g, b) => r < 250 || g < 250 || b < 250;
@@ -393,6 +409,24 @@ describe('projection wiring', () => {
       [{ fit: [1, 2, 3] }, 'bbox'],
       [{ fit: { map: 'world', features: ['Atlantis'] } }, 'Unknown feature'],
       [{ fit: 'europe' }, 'Projection "fit"'],
+      // A projection of the wrong type entirely: chartjs-chart-geo would fall
+      // back to albersUsa and render a plausible-looking wrong map.
+      [{ projection: 42 }, 'got number'],
+      [{ projection: true }, 'got boolean'],
+      [{ projection: null }, 'got null'],
+      [{ projection: ['conicEqualArea'] }, 'got array'],
+      // Junk in a fit feature list used to render a silently broken chart
+      // (numbers) or throw a bare TypeError (null).
+      [{ fit: { map: 'world', features: [1, 2, 3] } }, 'inline GeoJSON'],
+      [{ fit: { map: 'world', features: [null] } }, 'inline GeoJSON'],
+      [{ fit: { map: 'world', features: [['Germany']] } }, 'inline GeoJSON'],
+      [{ fit: { features: [1, 2, 3] } }, 'inline GeoJSON'],
+      // A name needs a map to be matched against.
+      [{ fit: { features: ['Germany'] } }, 'names no map'],
+      [{ fit: { map: 'world', features: [] } }, 'no features'],
+      // Structurally valid, measures to nothing.
+      [{ fit: { type: 'Feature' } }, 'no measurable extent'],
+      [{ fit: { type: 'Polygon', coordinates: [] } }, 'no measurable extent'],
     ];
     for (const [scaleOptions, fragment] of cases) {
       // eslint-disable-next-line no-await-in-loop
@@ -413,6 +447,37 @@ describe('projection wiring', () => {
     const box = await inkBox(choropleth('rus', [{ feature: 'Tomsk', value: 10 }], { padding: 4 }));
     assert(box.width > 0.9, `width ${box.width}`);
     assert(box.height > 0.5, `height ${box.height}`);
+  });
+
+  it('accepts inline GeoJSON in a fit feature list, alongside names', async () => {
+    const rows = [{ feature: 'Amur', value: 10 }];
+    const cropped = await filledBox(
+      choropleth('rus', rows, {
+        fit: { map: 'rus', features: ['Amur', { type: 'Point', coordinates: [135, 50] }] },
+      }),
+    );
+    const whole = await filledBox(choropleth('rus', rows));
+    assert(cropped.width > whole.width * 3, `${cropped.width} cropped vs ${whole.width}`);
+  });
+
+  it('leaves a projection the caller declined to name to the library default', async () => {
+    // An inline-outline chart naming no projection is not a QuickChart concern:
+    // chartjs-chart-geo's own default applies and must not be second-guessed.
+    const chart = {
+      type: 'choropleth',
+      data: {
+        datasets: [
+          {
+            outline: [SQUARE],
+            showOutline: true,
+            data: [{ feature: SQUARE, value: 1 }],
+          },
+        ],
+      },
+      options: { scales: { projection: { axis: 'x' }, color: { axis: 'x' } } },
+    };
+    const box = await inkBox(chart);
+    assert(box.width > 0, 'expected the chart to render');
   });
 
   it('leaves a named projection the user chose untouched', async () => {
@@ -436,5 +501,16 @@ describe('geometry measurement', () => {
     assert.strictEqual(describeGeometry(null), null);
     assert.strictEqual(describeGeometry([]), null);
     assert.strictEqual(describeGeometry({ nope: true }), null);
+    assert.strictEqual(describeGeometry({ type: 'Feature' }), null);
+    assert.strictEqual(describeGeometry({ type: 'FeatureCollection', features: [] }), null);
+  });
+
+  it('reports no extent rather than throwing on malformed geometry', () => {
+    // d3.geoBounds throws a TypeError on these; unguarded that becomes a 500.
+    assert.strictEqual(describeGeometry({ type: 'Polygon', coordinates: [] }), null);
+    assert.strictEqual(describeGeometry({ type: 'LineString', coordinates: [] }), null);
+    assert.deepStrictEqual(autoProjectionSpec({ type: 'Polygon', coordinates: [] }, null), {
+      type: 'equalEarth',
+    });
   });
 });
