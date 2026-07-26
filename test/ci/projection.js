@@ -219,6 +219,7 @@ describe('projection fit geometry', () => {
 });
 
 const CANVAS = { width: 400, height: 300 };
+const CHUKOTKA = [{ feature: 'Chukchi Autonomous Okrug', value: 8 }];
 
 // Grey borders, i.e. the map as a whole.
 const ANY_INK = (r, g, b) => r < 250 || g < 250 || b < 250;
@@ -356,6 +357,17 @@ describe('projection wiring', () => {
     );
     const whole = await filledBox(choropleth('rus', rows));
     assert(cropped.width > whole.width * 3, `Amur: ${cropped.width} cropped vs ${whole.width}`);
+  });
+
+  it('aims the automatic projection at the fit region, not at the whole map', async () => {
+    // A box over Chukotka, which straddles 180. Framing it is not enough - the
+    // projection has to be rotated away from the antimeridian too, or its own
+    // seam cuts the region in half and the fit spans the map.
+    const fit = { bbox: [160, 62, -172, 72] };
+    const aimed = await filledBox(choropleth('rus', CHUKOTKA, { fit }));
+    const unaimed = await filledBox(choropleth('rus', CHUKOTKA, { fit, projection: 'equalEarth' }));
+    assert(aimed.width > 0.8, `aimed width ${aimed.width}`);
+    assert(aimed.width > unaimed.width * 5, `${aimed.width} aimed vs ${unaimed.width}`);
   });
 
   it('accepts a bare bbox array', async () => {

@@ -174,7 +174,7 @@ A world choropleth cropped to Europe:
 }
 ```
 
-Note that `fit` frames the view but does not rotate the globe: for a region crossing the antimeridian, aim `projection` at it as well (or leave it on `auto`), otherwise the projection's own seam cuts the region in two.
+When `fit` is given and the projection is left on `auto`, the projection is aimed at the **fit region** rather than at the whole outline — cropping a world map to the Russian Far East frames it and rotates the globe to face it.  If you name a projection yourself, aim it yourself too: `fit` only frames, and a region crossing the antimeridian is cut in half by an unrotated projection's own seam.
 
 JS configs can access the same registry via `getMap(name)`, which returns `{ features, topology }` (alongside the existing `topojson` helper):
 
