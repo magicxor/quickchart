@@ -54,6 +54,43 @@ The chart configuration object is based on the popular Chart.js API.  Check out 
 
 **Configs must use Chart.js 4 syntax** (`options.scales.x`/`options.scales.y`, `options.plugins.legend`, `options.plugins.title`, and so on). Chart.js 2-style configs (`scales.xAxes`, top-level `legend`, `type: 'horizontalBar'`) are not translated.
 
+### Callbacks and scriptable options
+
+Many Chart.js options take a function — the datalabels `formatter`, `ticks.callback`, the tooltip callbacks, scriptable colors — and strict JSON cannot hold one.  Either send the config as a Javascript object literal and write the function directly, or **quote its source** and the server compiles it before rendering:
+
+```jsonc
+{
+  "options": {
+    "plugins": {
+      "datalabels": {
+        "formatter": "function(value) { return value.y + ' units'; }",
+        "display": "(ctx) => ctx.dataIndex !== 1"
+      }
+    },
+    "scales": { "y": { "ticks": { "callback": "(v) => '$' + v" } } }
+  }
+}
+```
+
+Quoted sources are recognized under the option names that Chart.js and its plugins accept a function for (`formatter`, `display`, `callback`, `filter`, the `tooltip.callbacks.*` names, scriptable colors and point styles, …), and only when the string really is a function expression or arrow function — a dataset `label` or a title `text` is never mistaken for code, and dataset data and category labels are not inspected at all.  A string that looks like a function but does not parse fails with a **400** naming the option, instead of being drawn as a label.
+
+Note that a config sent as a string is evaluated as Javascript in full, so this adds no capability the API did not already have — see [Securing your self-hosted instance](#securing-your-self-hosted-instance).
+
+### Data labels
+
+`options.plugins.datalabels` draws values onto the chart.  It is on by default for pie/doughnut charts and off elsewhere, so `display: true` (or any other datalabels option) turns it on.  The default label text understands the object data shapes this server renders — the plugin's own default stringifies most of them as `[object Object]`:
+
+| Data shape | Default label |
+|---|---|
+| `5`, `"text"`, `[1, 2, 3]` | the value itself |
+| `{ x, y }` | the value-axis coordinate: `y`, or `x` when `indexAxis: 'y'` |
+| `{ x, y, r }` | `r` |
+| `{ label, … }` | `label` |
+| choropleth `{ feature, value }` | the feature's name and the value, on two lines |
+| bubbleMap `{ longitude, latitude, value }` | the value, or `label` above it when the row has one |
+
+A `formatter` of your own overrides all of it; return an array of strings for a multi-line label.
+
 ### Included chart plugins
 
 The following plugins are registered and ready to use:
@@ -61,7 +98,7 @@ The following plugins are registered and ready to use:
 | Package | Chart types / features |
 |---|---|
 | [chartjs-plugin-annotation](https://github.com/chartjs/chartjs-plugin-annotation) | Line, box, ellipse, point, and label annotations via `options.plugins.annotation` |
-| [chartjs-plugin-datalabels](https://github.com/chartjs/chartjs-plugin-datalabels) | Data labels via `options.plugins.datalabels` (shown by default for pie/doughnut) |
+| [chartjs-plugin-datalabels](https://github.com/chartjs/chartjs-plugin-datalabels) | Data labels via `options.plugins.datalabels` — see [Data labels](#data-labels) |
 | [@sgratzl/chartjs-chart-boxplot](https://github.com/sgratzl/chartjs-chart-boxplot) | `boxplot`, `violin` |
 | [chartjs-chart-error-bars](https://github.com/sgratzl/chartjs-chart-error-bars) | `barWithErrorBars`, `lineWithErrorBars`, `scatterWithErrorBars`, `polarAreaWithErrorBars` |
 | [chartjs-chart-funnel](https://github.com/sgratzl/chartjs-chart-funnel) | `funnel` |
@@ -112,6 +149,7 @@ How references are resolved:
 
 - A string `outline` resolves to the named map's features. If only `map` is given, it doubles as the outline.
 - Choropleth `data[].feature` strings are matched against the `map` (or `outline`) map's features: first by `properties.name`, then by `id`, case-insensitive.  Feature ids are ISO 3166-1 numeric codes for `world*`, FIPS codes for `us*`, and datamaps subunit codes (e.g. `DE.BE`) for `<iso3>` maps.  Names must match the source data (English short names) — `GET /maps?name=<map>` lists every matchable feature.
+- A data row may carry a `label` next to `feature`/`value`.  It is what [data labels](#data-labels) print for that region, which is how regions get names the map data does not have — its own spelling, a local language, an abbreviation.  `{ "feature": "Minsk", "label": "Минская", "value": 1471 }` with `"datalabels": { "display": true }` writes "Минская" over "1471" on the region.
 - When a built-in map is used, sensible defaults are filled in: the `projection`/`color`/`size` scales, `showOutline: true`, and a hidden legend.  Anything you configure explicitly is left untouched.
 - Unknown map, feature, or projection names fail with HTTP 400 and an explanatory `X-quickchart-error`.
 - Inline GeoJSON objects (the pre-existing behavior) still work anywhere a named reference does — use them for custom shapes.
@@ -309,6 +347,7 @@ This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 - **Geo charts get bundled maps and aimable projections** — see [Geo charts and built-in maps](#geo-charts-and-built-in-maps).  Projections can be rotated/centered from plain JSON, are aimed automatically for built-in maps, and the view can be framed on an arbitrary region.
 - **Google Image Charts compatibility removed** (`/gchart` and `cht=` parameters).
 - **Graphviz rendering removed.**
+- **Callbacks may be quoted in a JSON config** and are compiled instead of silently ignored, and the datalabels default label understands geo and `{x, y}` data instead of stringifying it — see [Callbacks and scriptable options](#callbacks-and-scriptable-options) and [Data labels](#data-labels).
 - **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.
 - **Telemetry is opt-in** (`ENABLE_TELEMETRY`); the `POST /telemetry` aggregation endpoint is removed.
 - Express 5, pino logging, node-canvas 3, npm instead of yarn, Node 26 Docker base image, and a Docker-based E2E test suite.
