@@ -116,7 +116,7 @@ npm install
 
 `npm start` (or `node index.js`) starts the server on port 3400.  Set your `PORT` environment variable to change this port.
 
-Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000), `RATE_LIMIT_PER_MIN` (enables rate limiting on `/chart` when set), `REQUEST_TIMEOUT_MS` (default 5000), `EXPRESS_JSON_LIMIT` (default 100kb), `LOG_LEVEL`, `ENABLE_TELEMETRY` (usage telemetry is **disabled** unless this is set).
+Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000), `RATE_LIMIT_PER_MIN` (enables rate limiting on `/chart` when set), `TRUST_PROXY` (Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting — `true`, a hop count, or an IP/CIDR list; set this when running behind a reverse proxy so rate limiting sees real client IPs; default is off, so `X-Forwarded-For` is ignored and cannot be spoofed), `REQUEST_TIMEOUT_MS` (default 5000), `EXPRESS_JSON_LIMIT` (default 100kb), `LOG_LEVEL`, `ENABLE_TELEMETRY` (usage telemetry is **disabled** unless this is set).
 
 ## Testing
 

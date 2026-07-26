@@ -2,7 +2,7 @@ const path = require('path');
 
 const express = require('express');
 const qs = require('qs');
-const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { rateLimit } = require('express-rate-limit');
 
 const packageJson = require('./package.json');
 const telemetry = require('./telemetry');
@@ -15,6 +15,26 @@ const { renderTextToPng } = require('./lib/text');
 const app = express();
 
 const isDev = app.get('env') === 'development' || app.get('env') === 'test';
+
+// Trust reverse-proxy headers (X-Forwarded-For et al.) only when explicitly
+// configured; otherwise a direct client could spoof its IP, e.g. to bypass
+// rate limiting. Accepts the standard Express values: 'true'/'false', a hop
+// count, or a comma-separated IP/CIDR list.
+if (process.env.TRUST_PROXY) {
+  const raw = process.env.TRUST_PROXY.trim();
+  let trustProxy;
+  if (raw === 'true') {
+    trustProxy = true;
+  } else if (raw === 'false') {
+    trustProxy = false;
+  } else if (/^\d+$/.test(raw)) {
+    trustProxy = parseInt(raw, 10);
+  } else {
+    trustProxy = raw.split(',').map((entry) => entry.trim());
+  }
+  app.set('trust proxy', trustProxy);
+  logger.info('Trusting proxy:', raw);
+}
 
 app.set('query parser', (str) =>
   qs.parse(str, {
@@ -38,6 +58,9 @@ if (process.env.RATE_LIMIT_PER_MIN) {
   const limitMax = parseInt(process.env.RATE_LIMIT_PER_MIN, 10);
   logger.info('Enabling rate limit:', limitMax);
 
+  // The default key generator uses req.ip (which honors the `trust proxy`
+  // setting above) and masks IPv6 addresses to a subnet. Reading
+  // X-Forwarded-For directly would let clients spoof their identity.
   const limiter = rateLimit({
     windowMs: 60 * 1000,
     limit: limitMax,
@@ -46,12 +69,6 @@ if (process.env.RATE_LIMIT_PER_MIN) {
     handler: (req, res, next, options) => {
       logger.info('User hit rate limit!', req.ip);
       res.status(options.statusCode).send(options.message);
-    },
-    keyGenerator: (req) => {
-      const forwardedFor = req.headers['x-forwarded-for'];
-      const ip = forwardedFor ? String(forwardedFor).split(',')[0].trim() : req.ip;
-      // ipKeyGenerator normalizes the address and masks IPv6 to a subnet.
-      return ipKeyGenerator(ip);
     },
   });
   app.use('/chart', limiter);
