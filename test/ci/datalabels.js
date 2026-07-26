@@ -232,6 +232,24 @@ describe('quoted function options', () => {
     );
   });
 
+  it('rejects a source that calls a function instead of being one', () => {
+    // `new Function` evaluates this, so the call runs - config Javascript is
+    // trusted and executed either way. What must not happen is the result being
+    // dropped and the string left in the config, where Chart.js reads it as
+    // truthy text and silently mislabels the chart.
+    const chart = {
+      options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; }()' } } },
+    };
+    assert.throws(
+      () => compileFunctionStrings(chart),
+      (err) =>
+        err instanceof ChartInputError &&
+        err.statusCode === 400 &&
+        err.message.includes('options.plugins.datalabels.formatter') &&
+        err.message.includes('undefined'),
+    );
+  });
+
   it('tolerates configs that are not objects', () => {
     assert.doesNotThrow(() => {
       compileFunctionStrings(null);
