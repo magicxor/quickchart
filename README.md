@@ -125,6 +125,8 @@ Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000)
 
 ## Docker
 
+Tagged releases (`vX.Y.Z`) are automatically built and published as multi-arch (amd64 + arm64) images to GitHub Container Registry as `ghcr.io/<owner>/quickchart:<version>` and `:latest` (see `.github/workflows/release.yml`).  Pull requests run the full test suite, including the Docker E2E tests (`.github/workflows/ci.yml`).
+
 #### Building
 
 `Dockerfile` sets up a server that provides chart and qr code web endpoints.
