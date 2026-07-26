@@ -10,6 +10,7 @@ const app = require('../../index');
 const { BASIC_CHART, JS_CHART } = require('./chart_helpers');
 const { assertSimilarRgb } = require('./color_helpers');
 const { getQrValue } = require('./qr_helpers');
+const { PLUGIN_CONFIGS } = require('../fixtures/chart_configs');
 
 function assertDimensions(res, width, height) {
   const dimensions = imageSize(res.body);
@@ -270,6 +271,70 @@ describe('api error handling and headers', () => {
 
   it('no longer serves POST /telemetry', async () => {
     await request(app).post('/telemetry').send({ chartCount: 1, pid: 'abc' }).expect(404);
+  });
+});
+
+describe('maps endpoint and named-map charts', () => {
+  it('lists available maps', async () => {
+    const res = await request(app).get('/maps').expect('Content-Type', /json/).expect(200);
+    assert(Array.isArray(res.body));
+    const world = res.body.find((m) => m.name === 'world');
+    assert.deepStrictEqual(world, { name: 'world', source: 'world-atlas' });
+    assert(res.body.some((m) => m.name === 'deu' && m.source === 'datamaps'));
+  });
+
+  it('describes a single map with its features', async () => {
+    const res = await request(app)
+      .get('/maps?name=us-states')
+      .expect('Content-Type', /json/)
+      .expect(200);
+    assert.strictEqual(res.body.name, 'us-states');
+    assert(res.body.features.some((f) => f.name === 'California'));
+  });
+
+  it('returns 400 for describing an unknown map', async () => {
+    const res = await request(app).get('/maps?name=atlantis').expect(400);
+    assert(res.headers['x-quickchart-error'].includes('atlantis'));
+    assert(res.body.error.includes('Unknown map'));
+  });
+
+  it('renders a named-map choropleth via POST', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({ chart: PLUGIN_CONFIGS.choroplethWorldNamed })
+      .expect('Content-Type', 'image/png')
+      .expect(200);
+    assertDimensions(res, 500 * 2, 300 * 2);
+  });
+
+  it('returns 400 for an unknown map name in a chart config', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: {
+          type: 'choropleth',
+          data: { datasets: [{ outline: 'atlantis', data: [] }] },
+        },
+      })
+      .expect('Content-Type', 'image/png')
+      .expect(400);
+    assert(res.headers['x-quickchart-error'].includes('Unknown map'));
+  });
+
+  it('returns 400 for an unknown feature name in a chart config', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: {
+          type: 'choropleth',
+          data: {
+            datasets: [{ map: 'world', data: [{ feature: 'Atlantis', value: 1 }] }],
+          },
+        },
+      })
+      .expect('Content-Type', 'image/png')
+      .expect(400);
+    assert(res.headers['x-quickchart-error'].includes('Unknown feature'));
   });
 });
 

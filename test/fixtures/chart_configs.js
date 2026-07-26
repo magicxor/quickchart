@@ -287,6 +287,71 @@ const PLUGIN_CONFIGS = {
       },
     },
   },
+  // Built-in named maps (lib/maps.js): scales, outline visibility, and legend
+  // are defaulted by the geo reference transform.
+  choroplethWorldNamed: {
+    type: 'choropleth',
+    data: {
+      datasets: [
+        {
+          map: 'world',
+          outline: 'world',
+          data: [
+            { feature: 'Germany', value: 83 },
+            { feature: 'France', value: 67 },
+          ],
+        },
+      ],
+    },
+  },
+  choroplethUsStatesNamed: {
+    type: 'choropleth',
+    data: {
+      datasets: [
+        {
+          map: 'us-states',
+          data: [
+            { feature: 'California', value: 39 },
+            { feature: 'Texas', value: 29 },
+          ],
+        },
+      ],
+    },
+    options: {
+      scales: {
+        projection: { axis: 'x', projection: 'albersUsa' },
+      },
+    },
+  },
+  // A vendored datamaps country; Berlin is matched by subunit id.
+  choroplethCountryNamed: {
+    type: 'choropleth',
+    data: {
+      datasets: [
+        {
+          map: 'deu',
+          data: [
+            { feature: 'Bayern', value: 13 },
+            { feature: 'DE.BE', value: 4 },
+          ],
+        },
+      ],
+    },
+  },
+  bubbleMapNamed: {
+    type: 'bubbleMap',
+    data: {
+      datasets: [
+        {
+          outline: 'world',
+          data: [
+            { longitude: 13.4, latitude: 52.5, value: 10 },
+            { longitude: -74, latitude: 40.7, value: 20 },
+          ],
+        },
+      ],
+    },
+  },
   // chartjs-chart-graph
   graph: {
     type: 'graph',
