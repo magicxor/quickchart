@@ -375,6 +375,14 @@ describe('projection wiring', () => {
     }
   });
 
+  it('aims a projection scale that was configured without naming one', async () => {
+    // The scale exists but names no projection, so chartjs-chart-geo's
+    // albersUsa default would otherwise apply.
+    const box = await inkBox(choropleth('rus', [{ feature: 'Tomsk', value: 10 }], { padding: 4 }));
+    assert(box.width > 0.9, `width ${box.width}`);
+    assert(box.height > 0.5, `height ${box.height}`);
+  });
+
   it('leaves a named projection the user chose untouched', async () => {
     const box = await inkBox(
       choropleth('us-states', [{ feature: 'Texas', value: 10 }], { projection: 'albersUsa' }),
