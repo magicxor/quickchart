@@ -227,23 +227,37 @@ describe('canvas sizing', () => {
   it('evaluates a Javascript config once when it has no gradient to rebind', async () => {
     // The second pass exists only to rebind the gradient helpers to the final
     // canvas; any other config - which may have side effects - runs once.
-    globalThis.__evalCount = 0;
-    const plain = `(() => {
+    const countEvaluations = async (config) => {
+      globalThis.__evalCount = 0;
+      try {
+        await renderChartJs(undefined, undefined, 'white', 1, undefined, 'png', config);
+        return globalThis.__evalCount;
+      } finally {
+        delete globalThis.__evalCount;
+      }
+    };
+    const body = (extra) => `(() => {
       globalThis.__evalCount += 1;
-      return { type: 'bar', data: { labels: ['a'], datasets: [{ data: [1] }] } };
+      return { type: 'bar', data: { labels: ['a'], datasets: [{ data: [1]${extra} }] } };
     })()`;
-    await renderChartJs(undefined, undefined, 'white', 1, undefined, 'png', plain);
-    assert.strictEqual(globalThis.__evalCount, 1);
 
-    globalThis.__evalCount = 0;
-    const gradient = `(() => {
-      globalThis.__evalCount += 1;
-      return { type: 'bar', data: { labels: ['a'], datasets: [{ data: [1],
-        backgroundColor: getGradientFillHelper('vertical', ['#000', '#fff']) }] } };
-    })()`;
-    await renderChartJs(undefined, undefined, 'white', 1, undefined, 'png', gradient);
-    assert.strictEqual(globalThis.__evalCount, 2);
-    delete globalThis.__evalCount;
+    assert.strictEqual(await countEvaluations(body('')), 1);
+    assert.strictEqual(
+      await countEvaluations(
+        body(", backgroundColor: getGradientFillHelper('vertical', ['#000', '#fff'])"),
+      ),
+      2,
+    );
+    // Aliased rather than called directly: still bound to the canvas.
+    assert.strictEqual(
+      await countEvaluations(`(() => {
+        globalThis.__evalCount += 1;
+        const gradient = getGradientFillHelper;
+        return { type: 'bar', data: { labels: ['a'], datasets: [{ data: [1],
+          backgroundColor: gradient('vertical', ['#000', '#fff']) }] } };
+      })()`),
+      2,
+    );
   });
 
   it('keeps gradients matched to the canvas it derived', async () => {
