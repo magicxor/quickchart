@@ -90,6 +90,30 @@ describe('canvas sizing', () => {
     assert.strictEqual(size.height, 3000);
   });
 
+  it('shrinks along the ratio when the maximum is below the target', () => {
+    // Both sides are ours to choose here, so a maximum smaller than
+    // CHART_DEFAULT_SIZE must shrink the canvas, not reshape it.
+    const landscape = resolveCanvasSize({
+      ratio: 16 / 9,
+      longSide: 4000,
+      maxWidth: 3000,
+      maxHeight: 3000,
+    });
+    assert.deepStrictEqual(landscape, { width: 3000, height: 1688 });
+
+    const portrait = resolveCanvasSize({
+      ratio: 0.5,
+      longSide: 4000,
+      maxWidth: 3000,
+      maxHeight: 3000,
+    });
+    assert.deepStrictEqual(portrait, { width: 1500, height: 3000 });
+
+    // A maximum that bites on the derived side rather than the long one.
+    const wide = resolveCanvasSize({ ratio: 4, longSide: 2000, maxWidth: 2000, maxHeight: 400 });
+    assert.deepStrictEqual(wide, { width: 1600, height: 400 });
+  });
+
   it('knows which chart types are read landscape', () => {
     assert.strictEqual(ratioForType('line'), 16 / 9);
     assert.strictEqual(ratioForType('bar'), 16 / 9);
