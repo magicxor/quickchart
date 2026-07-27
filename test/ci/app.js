@@ -343,6 +343,54 @@ describe('maps endpoint and named-map charts', () => {
     assert(res.headers['x-quickchart-error'].includes('Unknown map'));
   });
 
+  it('reports the map features left without data in a response header', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: {
+          type: 'choropleth',
+          data: {
+            datasets: [
+              {
+                map: 'blr',
+                data: [{ feature: 'Minsk', label: 'Минская', value: 1 }],
+              },
+            ],
+          },
+        },
+      })
+      .expect('Content-Type', 'image/png')
+      .expect(200);
+
+    const header = res.headers['x-quickchart-geo-coverage'];
+    // Parseable as JSON, and ASCII-only so that a header can carry it whatever
+    // language the map names things in.
+    // eslint-disable-next-line no-control-regex
+    assert(/^[\x20-\x7e]*$/.test(header), `non-ascii header: ${header}`);
+    const [entry] = JSON.parse(header).maps;
+    assert.deepStrictEqual(
+      { map: entry.map, framed: entry.framed, covered: entry.covered },
+      { map: 'blr', framed: 7, covered: 1 },
+    );
+    assert(entry.missing.includes('Gomel'), `missing: ${entry.missing}`);
+  });
+
+  it('sends no coverage header for a chart that covers its map', async () => {
+    const regions = ['Brest', 'Vitebsk', 'Gomel', 'Grodno', 'Minsk', 'Mogilev', 'City of Minsk'];
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: {
+          type: 'choropleth',
+          data: {
+            datasets: [{ map: 'blr', data: regions.map((feature) => ({ feature, value: 1 })) }],
+          },
+        },
+      })
+      .expect(200);
+    assert.strictEqual(res.headers['x-quickchart-geo-coverage'], undefined);
+  });
+
   it('returns 400 for an unknown feature name in a chart config', async () => {
     const res = await request(app)
       .post('/chart')

@@ -2,7 +2,10 @@
 
 const assert = require('assert');
 
+const { renderChartJs } = require('../../lib/charts');
 const {
+  featureAlias,
+  getFeatureExtents,
   getMap,
   getMapGeography,
   resolveOutline,
@@ -105,5 +108,118 @@ describe('map registry', () => {
 
   it('caches a map’s geography', () => {
     assert.strictEqual(getMapGeography('deu'), getMapGeography('DEU'));
+  });
+
+  it('measures and caches every feature of a map', () => {
+    const extents = getFeatureExtents('blr');
+    assert.strictEqual(extents.length, resolveOutline('blr').length);
+    const minsk = extents.find(({ feature }) => featureAlias(feature) === 'City of Minsk');
+    assert(minsk, 'expected a City of Minsk feature');
+    assert.deepStrictEqual(
+      minsk.bbox.map(Math.round),
+      [27, 54, 28, 54],
+      `Minsk bbox ${minsk.bbox}`,
+    );
+    assert.strictEqual(getFeatureExtents('blr'), getFeatureExtents('BLR'));
+  });
+
+  it('names a feature the way a data row would reference it', () => {
+    assert.strictEqual(featureAlias(matchFeature('world', 'Germany')), 'Germany');
+    // Some datamaps subdivisions have no name and are matchable by id only.
+    assert.strictEqual(featureAlias({ properties: {}, id: 'DE.BE' }), 'DE.BE');
+    assert.strictEqual(featureAlias({ properties: {} }), null);
+  });
+});
+
+describe('geo coverage', () => {
+  const partial = () => ({
+    type: 'choropleth',
+    data: {
+      datasets: [
+        {
+          map: 'blr',
+          data: [
+            { feature: 'Minsk', value: 1 },
+            { feature: 'Brest', value: 2 },
+          ],
+        },
+      ],
+    },
+  });
+
+  async function coverageOf(chart) {
+    const diagnostics = {};
+    await renderChartJs(200, 150, '#fff', 1, '4', 'png', chart, diagnostics);
+    return diagnostics.geoCoverage;
+  }
+
+  it('reports the framed features that have no data row', async () => {
+    const coverage = await coverageOf(partial());
+    assert.deepStrictEqual(coverage.maps.length, 1);
+    const [entry] = coverage.maps;
+    assert.strictEqual(entry.map, 'blr');
+    assert.strictEqual(entry.framed, resolveOutline('blr').length);
+    assert.strictEqual(entry.covered, 2);
+    assert(entry.missing.includes('Gomel'), `missing: ${entry.missing}`);
+    assert(!entry.missing.includes('Minsk'), `missing: ${entry.missing}`);
+    assert.strictEqual(entry.more, undefined);
+  });
+
+  it('says nothing when every framed feature has data', async () => {
+    const chart = partial();
+    chart.data.datasets[0].data = resolveOutline('blr').map((feature) => ({
+      feature: featureAlias(feature),
+      value: 1,
+    }));
+    assert.strictEqual(await coverageOf(chart), undefined);
+  });
+
+  it('pools the datasets of one map, as a categorical map builds it', async () => {
+    const rows = resolveOutline('blr').map((feature) => featureAlias(feature));
+    const chart = {
+      type: 'choropleth',
+      data: {
+        datasets: rows.map((name) => ({ map: 'blr', data: [{ feature: name }] })),
+      },
+    };
+    assert.strictEqual(await coverageOf(chart), undefined);
+  });
+
+  it('counts only the features a fit leaves in frame', async () => {
+    const farEast = () => ({
+      type: 'choropleth',
+      data: { datasets: [{ map: 'rus', data: [{ feature: 'Amur', value: 1 }] }] },
+    });
+    const whole = await coverageOf(farEast());
+    assert.strictEqual(whole.maps[0].framed, resolveOutline('rus').length);
+
+    const chart = farEast();
+    chart.options = {
+      scales: {
+        projection: { axis: 'x', fit: { map: 'rus', features: ['Amur', 'Khabarovsk'] } },
+      },
+    };
+    const [entry] = (await coverageOf(chart)).maps;
+    // Cropping to the Far East is not an omission of the rest of Russia.
+    assert(entry.framed < 15, `framed ${entry.framed} of ${resolveOutline('rus').length}`);
+    assert(entry.missing.includes('Khabarovsk'), `missing: ${entry.missing}`);
+  });
+
+  it('caps the named features and counts the rest', async () => {
+    const coverage = await coverageOf({
+      type: 'choropleth',
+      data: { datasets: [{ map: 'world', data: [{ feature: 'Germany', value: 1 }] }] },
+    });
+    const [entry] = coverage.maps;
+    assert.strictEqual(entry.covered, 1);
+    assert.strictEqual(entry.missing.length, 20);
+    assert(entry.more > 100, `more: ${entry.more}`);
+  });
+
+  it('reports nothing for a chart with no map', async () => {
+    assert.strictEqual(
+      await coverageOf({ type: 'bar', data: { labels: ['a'], datasets: [{ data: [1] }] } }),
+      undefined,
+    );
   });
 });

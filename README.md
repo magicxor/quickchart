@@ -213,6 +213,14 @@ Mind the doubled name: the scale is `options.scales.projection`, and the project
 
 West may exceed east for a box past the antimeridian: `[160, 62, -172, 72]` is Chukotka.  A `features` list may mix map feature names/ids with inline GeoJSON objects; anything else in it — a number, `null` — is rejected with a 400 rather than quietly framing nothing.
 
+The object forms also take `mainland`:
+
+```jsonc
+"fit": { "map": "world", "features": ["France", "Spain", "Germany"], "mainland": true }
+```
+
+A map feature covers all of a country's territory, and for some countries that reaches across an ocean: France's world-atlas feature includes French Guiana, so framing it stretches the view from Europe to Brazil.  `mainland: true` frames only the main body of the geometry — the group of neighbouring parts with the largest total area, where parts within 10° of each other count as neighbours.  It is opt-in: dropping part of a region the caller named is not a default.  Nothing is dropped when the geometry is a single part, when everything is one group, or when there are no areas to compare (a bbox outline is a line).
+
 Prefer the `bbox` form over an inline Polygon: d3-geo reads a polygon's **ring winding** to decide which side is the interior, and a box wound the other way is the whole sphere *minus* the box — which fits to the globe and silently frames nothing.  Note the order in the example above: south-west, north-west, north-east, south-east.  `bbox` sidesteps this entirely.
 
 A world choropleth cropped to Europe:
@@ -267,6 +275,25 @@ Discovery: `GET /maps` returns all available map names and sources as JSON.  `GE
 ```
 
 Note: the per-country datamaps borders are ~2015-era.  Refresh them with `node scripts/sync-datamaps.js` (see `maps/datamaps/SOURCE.md`).
+
+#### Which regions got data
+
+A choropleth paints the features it has data rows for; everything else is the backdrop (`outlineBackgroundColor`, grey by convention).  Nothing in the response distinguishes "no data for Gomel" from "forgot Gomel", so a chart that leaves features out comes back with **`X-quickchart-geo-coverage`**, JSON naming them:
+
+```jsonc
+// X-quickchart-geo-coverage
+{
+  "maps": [{
+    "map": "blr",
+    "framed": 7,          // features of the map the view actually shows
+    "covered": 2,         // ... of which have a data row
+    "missing": ["Gomel", "Grodno", "Mogilev", "Vitebsk", "City of Minsk"],
+    "more": 0             // present only when more are missing than are named (20 max)
+  }]
+}
+```
+
+The header is absent when every framed feature has a row, so its presence is the whole signal.  Coverage is pooled across the datasets that share a map, which is how a categorical map (one dataset per category) is built.  A `fit` narrows what counts: cropping Russia to the Far East does not report the rest of the country as missing.  Non-ASCII names are escaped as JSON `\uXXXX`, since a header value cannot carry them directly.
 
 ## QR Codes
 
