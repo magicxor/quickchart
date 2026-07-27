@@ -61,7 +61,9 @@ The chart configuration object is based on the popular Chart.js API.  Check out 
 - **Geo charts** are measured through the projection they will be drawn with, so the plot area comes out shaped like the map — Russia lands on a 1280×741 canvas, Germany on 941×1280 — and a map cropped with `fit` is measured from the crop rather than from the whole map.  What the title, legend and padding take up is measured too (by laying the chart out once, which costs a few milliseconds), so it is the plot area that gets the map's proportions, not the canvas.
 - **Every other type** gets the proportions it is usually read at: 16:9 for the cartesian family (bar, line, scatter, boxplot, funnel, graphs, parallel coordinates), 4:1 for `sparkline` and 6:1 for `progressBar`, square for the radial ones (pie, doughnut, radar, polarArea, venn, wordCloud) and for anything unrecognized.
 
-Give one side and the other follows from the same ratio (`width=800` on a Russia map renders 800×472).  Give both and they are used as-is.  Give neither and the longest side is 1280 — `CHART_DEFAULT_SIZE` — with the other derived.  A derived side is clamped to `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` rather than failing.
+Give one side and the other follows from the same ratio (`width=800` on a Russia map renders 800×472).  Give both and they are used as-is, with no measuring done at all.  Give neither and the longest side is 1280 — `CHART_DEFAULT_SIZE` — with the other derived.  Sizes are bounded by `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT`: a maximum below what a derived canvas would be shrinks it along its ratio, and a side derived from one you gave is clamped rather than failing.
+
+One caveat for Javascript configs: `getGradientFill`/`getGradientFillHelper` build their gradients across the canvas, so a config that calls either of them **and** leaves a dimension open is evaluated a second time once the canvas is known.  Configs that do not use those helpers are evaluated once, whether or not a dimension was derived.
 
 ### Callbacks and scriptable options
 

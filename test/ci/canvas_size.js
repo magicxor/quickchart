@@ -4,7 +4,12 @@ const assert = require('assert');
 
 const { imageSize } = require('image-size');
 
-const { DEFAULT_LONG_SIDE, ratioForType, resolveCanvasSize } = require('../../lib/canvas');
+const {
+  DEFAULT_LONG_SIDE,
+  parseLongSide,
+  ratioForType,
+  resolveCanvasSize,
+} = require('../../lib/canvas');
 const { renderChartJs } = require('../../lib/charts');
 const { ChartInputError } = require('../../lib/errors');
 const { getMap, getMapGeography } = require('../../lib/maps');
@@ -189,6 +194,36 @@ describe('canvas sizing', () => {
         `width ${bad} should have been rejected`,
       );
     }
+  });
+
+  it('falls back to 1280 for a default size that is not a length', () => {
+    assert.strictEqual(parseLongSide('2000'), 2000);
+    assert.strictEqual(parseLongSide(2000.4), 2000);
+    for (const bad of ['-500', -500, '0', 0, 0.5, 'abc', '', null, undefined, Number.NaN]) {
+      assert.strictEqual(parseLongSide(bad), 1280, `${bad} should have fallen back`);
+    }
+  });
+
+  it('evaluates a Javascript config once when it has no gradient to rebind', async () => {
+    // The second pass exists only to rebind the gradient helpers to the final
+    // canvas; any other config - which may have side effects - runs once.
+    globalThis.__evalCount = 0;
+    const plain = `(() => {
+      globalThis.__evalCount += 1;
+      return { type: 'bar', data: { labels: ['a'], datasets: [{ data: [1] }] } };
+    })()`;
+    await renderChartJs(undefined, undefined, 'white', 1, undefined, 'png', plain);
+    assert.strictEqual(globalThis.__evalCount, 1);
+
+    globalThis.__evalCount = 0;
+    const gradient = `(() => {
+      globalThis.__evalCount += 1;
+      return { type: 'bar', data: { labels: ['a'], datasets: [{ data: [1],
+        backgroundColor: getGradientFillHelper('vertical', ['#000', '#fff']) }] } };
+    })()`;
+    await renderChartJs(undefined, undefined, 'white', 1, undefined, 'png', gradient);
+    assert.strictEqual(globalThis.__evalCount, 2);
+    delete globalThis.__evalCount;
   });
 
   it('keeps gradients matched to the canvas it derived', async () => {
