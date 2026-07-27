@@ -6,7 +6,7 @@ const { imageSize } = require('image-size');
 
 const {
   DEFAULT_LONG_SIDE,
-  parseLongSide,
+  parsePixelSize,
   ratioForType,
   resolveCanvasSize,
 } = require('../../lib/canvas');
@@ -216,11 +216,15 @@ describe('canvas sizing', () => {
     }
   });
 
-  it('falls back to 1280 for a default size that is not a length', () => {
-    assert.strictEqual(parseLongSide('2000'), 2000);
-    assert.strictEqual(parseLongSide(2000.4), 2000);
-    for (const bad of ['-500', -500, '0', 0, 0.5, 'abc', '', null, undefined, Number.NaN]) {
-      assert.strictEqual(parseLongSide(bad), 1280, `${bad} should have fallen back`);
+  it('falls back for a configured length that is not one', () => {
+    // CHART_DEFAULT_SIZE and CHART_MAX_WIDTH/HEIGHT all come from the
+    // environment and are all used as arithmetic.
+    assert.strictEqual(parsePixelSize('2000', 1280), 2000);
+    assert.strictEqual(parsePixelSize(2000.4, 1280), 2000);
+    const bad = ['-500', -500, '0', 0, 0.5, 'abc', '3000px', '', null, undefined, Number.NaN];
+    for (const value of bad) {
+      assert.strictEqual(parsePixelSize(value, 1280), 1280, `${value} should have fallen back`);
+      assert.strictEqual(parsePixelSize(value, 3000), 3000, `${value} should have fallen back`);
     }
   });
 
