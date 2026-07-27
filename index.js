@@ -200,9 +200,12 @@ async function renderChartToPdf(req, res, opts) {
   doChartjsRender(req, res, opts);
 }
 
-function parseSizeParam(value, defaultValue) {
+// An omitted dimension stays omitted: the renderer sizes the canvas from what
+// the chart is (see lib/canvas.js), which it can do better than a fixed default
+// ever could.
+function parseSizeParam(value) {
   if (value === undefined || value === null || value === '') {
-    return defaultValue;
+    return undefined;
   }
   // Number() rather than parseInt(): partially-numeric input like '500px'
   // must reach the renderer as NaN and be rejected as a 400, not silently
@@ -223,11 +226,11 @@ function doChartjsRender(req, res, opts) {
     return;
   }
 
-  // Absent parameters get defaults; present-but-invalid values are passed
-  // through so the renderer rejects them as 400 input errors (instead of
+  // Absent dimensions are derived by the renderer; present-but-invalid values
+  // are passed through so it rejects them as 400 input errors (instead of
   // silently defaulting or leaking into canvas code as a 500).
-  const width = parseSizeParam(opts.width, 500);
-  const height = parseSizeParam(opts.height, 300);
+  const width = parseSizeParam(opts.width);
+  const height = parseSizeParam(opts.height);
 
   let untrustedInput = opts.chart;
   if (opts.encoding === 'base64') {

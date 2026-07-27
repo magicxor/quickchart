@@ -12,10 +12,28 @@ const { assertSimilarRgb } = require('./color_helpers');
 const { getQrValue } = require('./qr_helpers');
 const { PLUGIN_CONFIGS } = require('../fixtures/chart_configs');
 
+// A request that names no size gets one derived from the chart: 16:9 for the
+// cartesian types, and the map's own proportions for a geo chart. Times the
+// default device pixel ratio of 2.
+const AUTO_LANDSCAPE_WIDTH = 1280 * 2;
+const AUTO_LANDSCAPE_HEIGHT = 720 * 2;
+
 function assertDimensions(res, width, height) {
   const dimensions = imageSize(res.body);
   assert.equal(width, dimensions.width);
   assert.equal(height, dimensions.height);
+}
+
+// For a map the height also depends on what the title and colour bar take up,
+// which is measured text and so is not identical across platforms.
+function assertMapDimensions(res, width, ratio) {
+  const dimensions = imageSize(res.body);
+  assert.equal(width, dimensions.width);
+  const actual = dimensions.width / dimensions.height;
+  assert(
+    Math.abs(actual - ratio) / ratio < 0.1,
+    `expected roughly ${ratio}:1, got ${actual.toFixed(2)}:1 (${dimensions.width}x${dimensions.height})`,
+  );
 }
 
 async function getCornerPixel(res) {
@@ -38,7 +56,7 @@ describe('chart request', () => {
       .get(`/chart?c=${encodeURIComponent(JSON.stringify(BASIC_CHART))}`)
       .expect('Content-Type', 'image/png')
       .expect(200);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 
   it('returns a basic chart via GET, base64 encoded', async () => {
@@ -48,7 +66,7 @@ describe('chart request', () => {
       )
       .expect('Content-Type', 'image/png')
       .expect(200);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 
   it('returns an JS chart via GET', async () => {
@@ -56,7 +74,7 @@ describe('chart request', () => {
       .get(`/chart?c=${encodeURIComponent(JS_CHART)}`)
       .expect('Content-Type', 'image/png')
       .expect(200);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 
   it('returns a basic chart via GET with parameters', async () => {
@@ -80,7 +98,7 @@ describe('chart request', () => {
       })
       .expect('Content-Type', 'image/png')
       .expect(200);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 
   it('returns a basic chart via POST, base64 encoded', async () => {
@@ -92,7 +110,7 @@ describe('chart request', () => {
       })
       .expect('Content-Type', 'image/png')
       .expect(200);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 
   it('returns an advanced chart via POST', async () => {
@@ -103,7 +121,7 @@ describe('chart request', () => {
       })
       .expect('Content-Type', 'image/png')
       .expect(200);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 
   it('returns an advanced chart via POST with parameters', async () => {
@@ -152,7 +170,7 @@ describe('chart request', () => {
     // transparent, proving the previous request's background didn't stick.
     const pixel = await getCornerPixel(res);
     assert.equal(0, pixel.a);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 });
 
@@ -307,7 +325,8 @@ describe('maps endpoint and named-map charts', () => {
       .send({ chart: PLUGIN_CONFIGS.choroplethWorldNamed })
       .expect('Content-Type', 'image/png')
       .expect(200);
-    assertDimensions(res, 500 * 2, 300 * 2);
+    // Sized from the world map itself rather than from a fixed default.
+    assertMapDimensions(res, AUTO_LANDSCAPE_WIDTH, 2.03);
   });
 
   it('returns 400 for an unknown map name in a chart config', async () => {

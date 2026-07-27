@@ -36,8 +36,8 @@ A chart is defined completely by its URL or by the JSON body of a `POST /chart` 
 | Parameter | Alias | Description |
 |---|---|---|
 | `chart` | `c` | Chart.js 4 config, as JSON or a Javascript object literal (required) |
-| `width` | `w` | Image width in logical pixels (default 500) |
-| `height` | `h` | Image height in logical pixels (default 300) |
+| `width` | `w` | Image width in logical pixels — omit to derive it, see [Canvas size](#canvas-size) |
+| `height` | `h` | Image height in logical pixels — omit to derive it, see [Canvas size](#canvas-size) |
 | `backgroundColor` | `bkg` | Canvas background color (default transparent) |
 | `devicePixelRatio` | | Pixel density multiplier, output is `width*ratio` x `height*ratio` (default 2, must be > 0 and <= 4) |
 | `format` | `f` | `png` (default), `svg`, or `pdf` |
@@ -53,6 +53,15 @@ Other endpoints: `GET /maps` lists the built-in geo maps (see [Geo charts and bu
 The chart configuration object is based on the popular Chart.js API.  Check out the [Chart.js documentation](https://www.chartjs.org/docs/latest/) for more information on how to customize your chart, or see [QuickChart documentation](https://quickchart.io/documentation#parameters) for API options.
 
 **Configs must use Chart.js 4 syntax** (`options.scales.x`/`options.scales.y`, `options.plugins.legend`, `options.plugins.title`, and so on). Chart.js 2-style configs (`scales.xAxes`, top-level `legend`, `type: 'horizontalBar'`) are not translated.
+
+### Canvas size
+
+`width` and `height` are optional, and whichever one you leave out is derived from the chart itself:
+
+- **Geo charts** are measured through the projection they will be drawn with, so the plot area comes out shaped like the map — Russia lands on a 1280×741 canvas, Germany on 941×1280 — and a map cropped with `fit` is measured from the crop rather than from the whole map.  What the title, legend and padding take up is measured too (by laying the chart out once, which costs a few milliseconds), so it is the plot area that gets the map's proportions, not the canvas.
+- **Every other type** gets the proportions it is usually read at: 16:9 for the cartesian family (bar, line, scatter, boxplot, funnel, graphs, parallel coordinates), 4:1 for `sparkline` and 6:1 for `progressBar`, square for the radial ones (pie, doughnut, radar, polarArea, venn, wordCloud) and for anything unrecognized.
+
+Give one side and the other follows from the same ratio (`width=800` on a Russia map renders 800×472).  Give both and they are used as-is.  Give neither and the longest side is 1280 — `CHART_DEFAULT_SIZE` — with the other derived.  A derived side is clamped to `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` rather than failing.
 
 ### Callbacks and scriptable options
 
@@ -295,7 +304,7 @@ npm install
 
 `npm start` (or `node index.js`) starts the server on port 3400.  Set your `PORT` environment variable to change this port.
 
-Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000), `RATE_LIMIT_PER_MIN` (enables rate limiting on `/chart` when set), `TRUST_PROXY` (Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting — `true`, a hop count, or an IP/CIDR list; set this when running behind a reverse proxy so rate limiting sees real client IPs; default is off, so `X-Forwarded-For` is ignored and cannot be spoofed), `REQUEST_TIMEOUT_MS` (default 5000), `EXPRESS_JSON_LIMIT` (default 100kb), `LOG_LEVEL`, `ENABLE_TELEMETRY` (usage telemetry is **disabled** unless this is set).
+Other environment variables: `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT` (default 3000), `CHART_DEFAULT_SIZE` (default 1280 — the longest side of a canvas whose dimensions the caller left open, see [Canvas size](#canvas-size)), `RATE_LIMIT_PER_MIN` (enables rate limiting on `/chart` when set), `TRUST_PROXY` (Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting — `true`, a hop count, or an IP/CIDR list; set this when running behind a reverse proxy so rate limiting sees real client IPs; default is off, so `X-Forwarded-For` is ignored and cannot be spoofed), `REQUEST_TIMEOUT_MS` (default 5000), `EXPRESS_JSON_LIMIT` (default 100kb), `LOG_LEVEL`, `ENABLE_TELEMETRY` (usage telemetry is **disabled** unless this is set).
 
 ## Testing
 
@@ -348,6 +357,7 @@ This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 - **Google Image Charts compatibility removed** (`/gchart` and `cht=` parameters).
 - **Graphviz rendering removed.**
 - **Callbacks may be quoted in a JSON config** and are compiled instead of silently ignored, and the datalabels default label understands geo and `{x, y}` data instead of stringifying it — see [Callbacks and scriptable options](#callbacks-and-scriptable-options) and [Data labels](#data-labels).
+- **`width`/`height` are optional** and derived from the chart when omitted, rather than defaulting to a fixed 500×300 — see [Canvas size](#canvas-size).
 - **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.
 - **Telemetry is opt-in** (`ENABLE_TELEMETRY`); the `POST /telemetry` aggregation endpoint is removed.
 - Express 5, pino logging, node-canvas 3, npm instead of yarn, Node 26 Docker base image, and a Docker-based E2E test suite.
