@@ -5,7 +5,7 @@ const d3geo = require('d3-geo');
 const { Jimp } = require('jimp');
 
 const { renderChartJs } = require('../../lib/charts');
-const { getMap } = require('../../lib/maps');
+const { getMap, matchFeature } = require('../../lib/maps');
 const {
   PROJECTION_NAMES,
   autoProjectionSpec,
@@ -13,6 +13,7 @@ const {
   buildProjection,
   describeGeometry,
   isProjectionSpec,
+  mainlandGeometry,
   validateProjectionName,
 } = require('../../lib/projection');
 const { ChartInputError } = require('../../lib/errors');
@@ -225,6 +226,88 @@ describe('projection fit geometry', () => {
   });
 });
 
+// A square of `size` degrees with its south-west corner at (lon, lat).
+function square(lon, lat, size) {
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [lon, lat],
+        [lon, lat + size],
+        [lon + size, lat + size],
+        [lon + size, lat],
+        [lon, lat],
+      ],
+    ],
+  };
+}
+
+function multiPolygon(...polygons) {
+  return { type: 'MultiPolygon', coordinates: polygons.map((polygon) => polygon.coordinates) };
+}
+
+describe('mainland geometry', () => {
+  it('keeps the largest body and drops what is detached from it', () => {
+    const reduced = mainlandGeometry(multiPolygon(square(0, 0, 10), square(60, 0, 2)));
+    assert.strictEqual(reduced.type, 'GeometryCollection');
+    assert.strictEqual(reduced.geometries.length, 1);
+    // Rounded: a polygon's edges are great-circle arcs, so the northern one
+    // bulges a fraction of a degree past its corners.
+    assert.deepStrictEqual(describeGeometry(reduced).bbox.map(Math.round), [0, 0, 10, 10]);
+  });
+
+  it('measures bodies by area, not by part count', () => {
+    // Three small squares next to each other lose to one big one elsewhere.
+    const reduced = mainlandGeometry(
+      multiPolygon(square(60, 0, 2), square(63, 0, 2), square(66, 0, 2), square(0, 0, 20)),
+    );
+    assert.deepStrictEqual(describeGeometry(reduced).bbox.map(Math.round), [0, 0, 20, 20]);
+  });
+
+  it('holds a chain of nearby parts together, however far its ends are', () => {
+    // Each step is under the gap, so the chain is one body even though its ends
+    // are 45 degrees apart.
+    const chain = multiPolygon(
+      square(0, 0, 5),
+      square(9, 0, 5),
+      square(18, 0, 5),
+      square(27, 0, 5),
+      square(36, 0, 5),
+    );
+    const reduced = mainlandGeometry(chain);
+    assert.deepStrictEqual(describeGeometry(reduced).bbox.map(Math.round), [0, 0, 41, 5]);
+  });
+
+  it('keeps parts that neighbour each other across the antimeridian', () => {
+    const straddling = multiPolygon(square(172, 60, 6), square(-176, 60, 6));
+    const reduced = mainlandGeometry(straddling);
+    // Unchanged: one body, so the value is returned as it came in.
+    assert.strictEqual(reduced, straddling);
+  });
+
+  it('leaves geometry it cannot choose between alone', () => {
+    const single = square(0, 0, 10);
+    assert.strictEqual(mainlandGeometry(single), single);
+    // A bbox outline is a LineString: no areas to compare, so nothing is cut.
+    const outline = bboxOutline([-25, 34, 45, 72]);
+    assert.strictEqual(mainlandGeometry(outline), outline);
+  });
+
+  it('reduces France to metropolitan France', () => {
+    const france = matchFeature('world', 'France');
+    const [west, south] = describeGeometry(france).bbox;
+    // French Guiana, which is why framing the whole feature reaches Brazil.
+    assert(west < -50 && south < 5, `whole-territory bbox starts at ${west}, ${south}`);
+
+    const bbox = describeGeometry(mainlandGeometry(france)).bbox;
+    assert.deepStrictEqual(
+      bbox.map(Math.round),
+      [-5, 41, 10, 51],
+      `metropolitan bbox came out as ${JSON.stringify(bbox)}`,
+    );
+  });
+});
+
 const CANVAS = { width: 400, height: 300 };
 const CHUKOTKA = [{ feature: 'Chukchi Autonomous Okrug', value: 8 }];
 const SQUARE = {
@@ -251,10 +334,11 @@ const ANY_INK = (r, g, b) => r < 250 || g < 250 || b < 250;
 const DATA_FILL = (r, g, b) => b - r > 40;
 
 /**
- * Renders a chart and measures the bounding box of the pixels `matches`
- * accepts, as a fraction of the canvas. The right quarter is skipped: the
- * color/size scale draws its legend there, which would pin the box to the edge
- * no matter how badly the map itself is framed.
+ * Renders a chart and measures the pixels `matches` accepts: the bounding box
+ * they span and how much of the area they fill, both as fractions of the
+ * scanned region rather than of the whole canvas. The right quarter is not
+ * scanned: the color/size scale draws its legend there, which would pin the box
+ * to the edge no matter how badly the map itself is framed.
  */
 async function measure(chart, matches) {
   const buf = await renderChartJs(CANVAS.width, CANVAS.height, '#ffffff', 1, '4', 'png', chart);
@@ -264,6 +348,7 @@ async function measure(chart, matches) {
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
+  let hits = 0;
 
   for (let y = 0; y < bitmap.height; y += 1) {
     for (let x = 0; x < scanWidth; x += 1) {
@@ -273,16 +358,18 @@ async function measure(chart, matches) {
         minY = Math.min(minY, y);
         maxX = Math.max(maxX, x);
         maxY = Math.max(maxY, y);
+        hits += 1;
       }
     }
   }
 
   if (minX === Infinity) {
-    return { width: 0, height: 0 };
+    return { width: 0, height: 0, share: 0 };
   }
   return {
     width: (maxX - minX + 1) / scanWidth,
     height: (maxY - minY + 1) / bitmap.height,
+    share: hits / (scanWidth * bitmap.height),
   };
 }
 
@@ -382,6 +469,19 @@ describe('projection wiring', () => {
     assert(cropped.width > whole.width * 3, `Amur: ${cropped.width} cropped vs ${whole.width}`);
   });
 
+  it('frames the mainland of a feature whose territory is scattered', async () => {
+    const rows = [{ feature: 'France', value: 10 }];
+    const whole = await filledBox(
+      choropleth('world', rows, { fit: { map: 'world', features: ['France'] } }),
+    );
+    const mainland = await filledBox(
+      choropleth('world', rows, { fit: { map: 'world', features: ['France'], mainland: true } }),
+    );
+    // France's feature reaches South America through French Guiana: framing the
+    // whole territory leaves metropolitan France a speck in an ocean of canvas.
+    assert(mainland.share > whole.share * 5, `France: ${mainland.share} vs ${whole.share}`);
+  });
+
   it('aims the automatic projection at the fit region, not at the whole map', async () => {
     // A box over Chukotka, which straddles 180. Framing it is not enough - the
     // projection has to be rotated away from the antimeridian too, or its own
@@ -445,6 +545,9 @@ describe('projection wiring', () => {
       [{ fit: { map: null } }, 'must be a map name; got null'],
       [{ fit: { map: 42 } }, 'got number'],
       [{ fit: { map: ['rus'] } }, 'got array'],
+      // The mainland switch drops geometry, so a value that is not plainly
+      // true/false must not be read as one.
+      [{ fit: { map: 'deu', mainland: 'yes' } }, 'mainland must be true or false'],
     ];
     for (const [scaleOptions, fragment] of cases) {
       // eslint-disable-next-line no-await-in-loop

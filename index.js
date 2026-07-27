@@ -213,6 +213,24 @@ function parseSizeParam(value) {
   return Number(value);
 }
 
+// Header values must be latin1, and a region name can be written in anything:
+// JSON's own \u escapes keep the payload ASCII-safe and still valid JSON.
+function asciiJson(value) {
+  return JSON.stringify(value).replace(
+    /[^\x20-\x7e]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
+
+// What the renderer noticed about the chart, for a client that can act on it. A
+// missing header means there was nothing to report, so a chart that covers its
+// map carries none.
+function setDiagnosticHeaders(res, diagnostics) {
+  if (diagnostics.geoCoverage) {
+    res.set('X-quickchart-geo-coverage', asciiJson(diagnostics.geoCoverage));
+  }
+}
+
 function doChartjsRender(req, res, opts) {
   if (opts.version) {
     res.set(
@@ -244,6 +262,7 @@ function doChartjsRender(req, res, opts) {
     }
   }
 
+  const diagnostics = {};
   renderChartJs(
     width,
     height,
@@ -252,8 +271,14 @@ function doChartjsRender(req, res, opts) {
     opts.version,
     opts.format,
     untrustedInput,
+    diagnostics,
   )
-    .then(opts.onRenderHandler)
+    .then((buf) => {
+      // Before the handler: the pdf one writes its own head, and headers set
+      // afterwards would never reach the client.
+      setDiagnosticHeaders(res, diagnostics);
+      return opts.onRenderHandler(buf);
+    })
     .catch((err) => {
       logger.warn('Chart error', err);
       opts.failFn(res, err, err && err.statusCode ? err.statusCode : 500);
