@@ -335,9 +335,10 @@ const DATA_FILL = (r, g, b) => b - r > 40;
 
 /**
  * Renders a chart and measures the pixels `matches` accepts: the bounding box
- * they span and the share of the canvas they cover, both as fractions. The
- * right quarter is skipped: the color/size scale draws its legend there, which
- * would pin the box to the edge no matter how badly the map itself is framed.
+ * they span and how much of the area they fill, both as fractions of the
+ * scanned region rather than of the whole canvas. The right quarter is not
+ * scanned: the color/size scale draws its legend there, which would pin the box
+ * to the edge no matter how badly the map itself is framed.
  */
 async function measure(chart, matches) {
   const buf = await renderChartJs(CANVAS.width, CANVAS.height, '#ffffff', 1, '4', 'png', chart);
