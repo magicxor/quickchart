@@ -176,6 +176,26 @@ describe('canvas sizing', () => {
     assert.deepStrictEqual(pie, { width: 1280, height: 1280 });
   });
 
+  it('sizes a QuickChart type by what was asked for, not what it becomes', async () => {
+    // sparkline renders as a line and progressBar as a bar, but neither is read
+    // at 16:9, so the ratio has to come from the type the caller named.
+    const sparkline = sizeOf(
+      await renderChartJs(undefined, undefined, 'white', 1, undefined, 'png', {
+        type: 'sparkline',
+        data: { datasets: [{ data: [1, 5, 3, 9, 4] }] },
+      }),
+    );
+    assert.deepStrictEqual(sparkline, { width: 1280, height: 320 });
+
+    const progress = sizeOf(
+      await renderChartJs(undefined, undefined, 'white', 1, undefined, 'png', {
+        type: 'progressBar',
+        data: { datasets: [{ data: [80] }] },
+      }),
+    );
+    assert.deepStrictEqual(progress, { width: 1280, height: 213 });
+  });
+
   it('completes a partially given size', async () => {
     const chart = { type: 'line', data: { labels: ['a'], datasets: [{ data: [1] }] } };
     const wide = sizeOf(await renderChartJs(900, undefined, 'white', 1, undefined, 'png', chart));
