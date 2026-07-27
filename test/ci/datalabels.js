@@ -10,19 +10,37 @@ const { getMap, matchFeature } = require('../../lib/maps');
 const { compileFunctionStrings } = require('../../lib/scriptable');
 
 // A datalabels formatter context, of which the formatter uses the chart type,
-// the dataset (for mixed charts) and `indexAxis`.
-function context(type, indexAxis) {
+// the dataset (for mixed charts), `indexAxis` and the category labels (funnel).
+function context(type, indexAxis, labels) {
   return {
     dataset: {},
     dataIndex: 0,
     datasetIndex: 0,
-    chart: { config: { type }, options: { indexAxis: indexAxis || 'x' } },
+    chart: { config: { type }, options: { indexAxis: indexAxis || 'x' }, data: { labels } },
   };
 }
 
 describe('datalabels default formatter', () => {
   it('is installed as the plugin default', () => {
     assert.strictEqual(Chart.defaults.plugins.datalabels.formatter, defaultFormatter);
+  });
+
+  it('is what a funnel uses, in place of the plugin percentage formatter', () => {
+    // chartjs-chart-funnel's own formatter reads a stage as a fraction of 1 and
+    // prints an absolute count of 600 as "60,000%".
+    assert.strictEqual(Chart.overrides.funnel.plugins.datalabels.formatter, undefined);
+  });
+
+  it('labels a funnel stage with its name and value', () => {
+    const labels = ['Клики', 'Корзина'];
+    assert.deepStrictEqual(defaultFormatter(600, context('funnel', 'x', labels)), ['Клики', '600']);
+    // Object data reaches the funnel controller through its bar parsing.
+    assert.deepStrictEqual(defaultFormatter({ y: 600 }, context('funnel', 'x', labels)), [
+      'Клики',
+      '600',
+    ]);
+    // Unnamed stages keep the value alone rather than growing an empty line.
+    assert.strictEqual(defaultFormatter(600, context('funnel')), '600');
   });
 
   it('labels a choropleth row with its feature name and value', () => {
@@ -337,6 +355,15 @@ describe('labelled charts render', () => {
     };
     await renderChartJs(300, 200, 'white', 1.0, undefined, 'png', chart);
     assert.strictEqual(chart.options.plugins.datalabels.display, false);
+  });
+
+  it('shows datalabels by default for a funnel, which has no axes', async () => {
+    const chart = {
+      type: 'funnel',
+      data: { labels: ['Показы', 'Клики'], datasets: [{ data: [1000, 600] }] },
+    };
+    await renderChartJs(400, 300, 'white', 1.0, undefined, 'png', chart);
+    assert.strictEqual(chart.options.plugins.datalabels.display, true);
   });
 
   it('does not walk data rows or inline map geometry', () => {

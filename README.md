@@ -89,7 +89,7 @@ A compiled source runs like any other Javascript in a config.  A config sent as 
 
 ### Data labels
 
-`options.plugins.datalabels` draws values onto the chart.  It is on by default for pie/doughnut charts and off elsewhere, so `display: true` (or any other datalabels option) turns it on.  The default label text understands the object data shapes this server renders — the plugin's own default stringifies most of them as `[object Object]`:
+`options.plugins.datalabels` draws values onto the chart.  It is on by default for the types that draw no axis to read a value off — pie, doughnut, funnel — and off elsewhere, so `display: true` (or any other datalabels option) turns it on.  The default label text understands the object data shapes this server renders — the plugin's own default stringifies most of them as `[object Object]`:
 
 | Data shape | Default label |
 |---|---|
@@ -97,8 +97,11 @@ A compiled source runs like any other Javascript in a config.  A config sent as 
 | `{ x, y }` | the value-axis coordinate: `y`, or `x` when `indexAxis: 'y'` |
 | `{ x, y, r }` | `r` |
 | `{ label, … }` | `label` |
+| funnel `5` | the stage's name (from `data.labels`) and the value, on two lines |
 | choropleth `{ feature, value }` | the feature's name and the value, on two lines |
 | bubbleMap `{ longitude, latitude, value }` | the value, or `label` above it when the row has one |
+
+A funnel labels its stages this way rather than as chartjs-chart-funnel does, which reads every value as a fraction of 1 and prints an absolute count of 600 as "60,000%".
 
 A `formatter` of your own overrides all of it; return an array of strings for a multi-line label.
 
