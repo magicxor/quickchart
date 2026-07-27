@@ -174,6 +174,25 @@ describe('geo coverage', () => {
     assert.strictEqual(await coverageOf(chart), undefined);
   });
 
+  it('pools datasets that name the same map with different casing', async () => {
+    const chart = {
+      type: 'choropleth',
+      data: {
+        datasets: [
+          { map: 'BLR', data: [{ feature: 'Minsk', value: 1 }] },
+          { map: 'blr', data: [{ feature: 'Brest', value: 2 }] },
+        ],
+      },
+    };
+    const { maps } = await coverageOf(chart);
+    // One map is drawn, so one entry: keyed per spelling, each dataset would
+    // report the other's regions as missing.
+    const entry = maps.length === 1 ? maps[0] : null;
+    assert(entry, `expected one entry, got ${JSON.stringify(maps)}`);
+    assert.strictEqual(entry.map, 'blr');
+    assert.strictEqual(entry.covered, 2);
+  });
+
   it('pools the datasets of one map, as a categorical map builds it', async () => {
     const rows = resolveOutline('blr').map((feature) => featureAlias(feature));
     const chart = {
