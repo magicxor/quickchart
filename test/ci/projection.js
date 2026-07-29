@@ -15,6 +15,7 @@ const {
   isProjectionSpec,
   mainlandGeometry,
   validateProjectionName,
+  visibleAnchorFor,
 } = require('../../lib/projection');
 const { ChartInputError } = require('../../lib/errors');
 
@@ -305,6 +306,130 @@ describe('mainland geometry', () => {
       [-5, 41, 10, 51],
       `metropolitan bbox came out as ${JSON.stringify(bbox)}`,
     );
+  });
+});
+
+const VIEW = { width: 900, height: 700 };
+
+/**
+ * A view set up the way the chart sets one up: the projection `auto` would pick
+ * for the region, fitted to a canvas of that shape. Returns the pieces
+ * `visibleAnchorFor` takes, plus the anchor chartjs-chart-geo would have used,
+ * so a test can state what changed.
+ */
+function viewOf(bbox, projectionSpec) {
+  const region = bboxOutline(bbox);
+  const projection = buildProjection(projectionSpec || autoProjectionSpec(region, null));
+  projection.fitExtent(
+    [
+      [0, 0],
+      [VIEW.width, VIEW.height],
+    ],
+    region,
+  );
+  const extent = [
+    [0, 0],
+    [VIEW.width, VIEW.height],
+  ];
+  return {
+    projection,
+    anchor: visibleAnchorFor(projection, extent),
+    // What GeoFeature.getCenterPoint() measures: the whole territory, projected,
+    // with nothing cut away.
+    wholeFeatureAnchor: (feature) => d3geo.geoPath(projection).centroid(feature),
+    covers: (point) =>
+      Boolean(point) &&
+      point[0] >= 0 &&
+      point[0] <= VIEW.width &&
+      point[1] >= 0 &&
+      point[1] <= VIEW.height,
+    lands: (point, feature) => {
+      const lonLat = projection.invert(point);
+      return Boolean(lonLat) && d3geo.geoContains(feature, lonLat);
+    },
+  };
+}
+
+const EUROPE_BBOX = [-25, 34, 45, 72];
+
+describe('visible label anchor', () => {
+  it('anchors a country on its mainland rather than between its territories', () => {
+    const view = viewOf(EUROPE_BBOX);
+    const france = matchFeature('world', 'France');
+
+    // The bug: French Guiana pulls the centre of area off the country, into the
+    // Atlantic west of Biscay.
+    const whole = view.wholeFeatureAnchor(france);
+    assert(view.covers(whole), `whole-feature anchor ${JSON.stringify(whole)} left the view`);
+    assert(!view.lands(whole, france), 'whole-feature anchor was already on France');
+
+    const anchor = view.anchor(france);
+    assert(view.lands(anchor, france), `anchor ${JSON.stringify(anchor)} is not on France`);
+  });
+
+  it('anchors a country that reaches past the view on the part in view', () => {
+    const view = viewOf(EUROPE_BBOX);
+    const russia = matchFeature('world', 'Russia');
+
+    // Siberia carries the centre of area clean off the canvas, so the label is
+    // drawn outside the image and never appears.
+    assert(
+      !view.covers(view.wholeFeatureAnchor(russia)),
+      'whole-feature anchor was inside the view',
+    );
+
+    const anchor = view.anchor(russia);
+    assert(view.covers(anchor), `anchor ${JSON.stringify(anchor)} left the view`);
+    assert(view.lands(anchor, russia), `anchor ${JSON.stringify(anchor)} is not on Russia`);
+  });
+
+  it('picks the largest single part, not the largest group of neighbours', () => {
+    // Malaysia is peninsula plus Borneo, 600km apart: near enough for the
+    // framing heuristic to hold them together, whose centre is then the South
+    // China Sea between them.
+    const view = viewOf([95, -11, 130, 22]);
+    const malaysia = matchFeature('world', 'Malaysia');
+    const clustered = d3geo.geoCentroid(mainlandGeometry(malaysia));
+    assert(!d3geo.geoContains(malaysia, clustered), 'the cluster centre was already on land');
+
+    const anchor = view.anchor(malaysia);
+    assert(view.lands(anchor, malaysia), `anchor ${JSON.stringify(anchor)} is not on Malaysia`);
+  });
+
+  it('reports nothing for a region the view does not show', () => {
+    const view = viewOf(EUROPE_BBOX);
+    // Nothing to anchor on and nothing to fall back to: the caller keeps
+    // whatever it had, which is off-canvas too.
+    assert.strictEqual(view.anchor(matchFeature('world', 'Australia')), null);
+    assert.strictEqual(view.anchor(matchFeature('world', 'Brazil')), null);
+  });
+
+  it('clips through a projection that has no clipExtent of its own', () => {
+    // albersUsa is the automatic choice for the US maps and a composite: the
+    // rectangle has to be applied after it, not configured on it.
+    const view = viewOf([-125, 24, -66, 50], { type: 'albersUsa' });
+    ['New York', 'Alaska', 'Hawaii'].forEach((name) => {
+      const state = matchFeature('us-states', name);
+      const anchor = view.anchor(state);
+      assert(view.lands(anchor, state), `${name} anchor ${JSON.stringify(anchor)} is not on it`);
+    });
+  });
+
+  it('reads the extent it is given', () => {
+    const russia = matchFeature('world', 'Russia');
+    const projection = viewOf(EUROPE_BBOX).projection;
+    const wide = visibleAnchorFor(projection, [
+      [0, 0],
+      [VIEW.width, VIEW.height],
+    ])(russia);
+    // Taking 200px off the eastern edge shows less of Russia, so the centre of
+    // what is left moves west.
+    const narrow = visibleAnchorFor(projection, [
+      [0, 0],
+      [VIEW.width - 200, VIEW.height],
+    ])(russia);
+    assert(narrow[0] < wide[0], `narrow anchor ${narrow[0]} is not left of wide ${wide[0]}`);
+    assert(narrow[0] <= VIEW.width - 200, `narrow anchor ${narrow[0]} left its own extent`);
   });
 });
 
@@ -668,6 +793,130 @@ describe('projection wiring', () => {
       choropleth('us-states', [{ feature: 'Texas', value: 10 }], { projection: 'albersUsa' }),
     );
     assert(box.width > 0.9, `width ${box.width}`);
+  });
+});
+
+/**
+ * Renders a chart and reports where each region's label ended up anchored, read
+ * in `afterUpdate` - the hook chartjs-plugin-datalabels reads element x/y in, so
+ * this is the position a label is actually drawn at.
+ */
+async function labelAnchors(chart) {
+  const captured = { anchors: new Map(), projection: null };
+  chart.plugins = [
+    {
+      id: 'test-label-anchors',
+      afterUpdate(instance) {
+        captured.projection = instance.scales.projection.projection;
+        instance.getDatasetMeta(0).data.forEach((element, index) => {
+          const { feature } = instance.data.datasets[0].data[index];
+          captured.anchors.set(feature.properties.name, [element.x, element.y]);
+        });
+      },
+    },
+  ];
+  await renderChartJs(VIEW.width, VIEW.height, '#fff', 1, '4', 'png', chart);
+  return captured;
+}
+
+function labelled(map, rows, projectionScale, datalabels = { display: true }) {
+  const chart = choropleth(map, rows, projectionScale);
+  chart.options.plugins = { datalabels };
+  return chart;
+}
+
+describe('label anchor wiring', () => {
+  const EUROPE = { fit: { bbox: EUROPE_BBOX } };
+
+  it('anchors every label on the region it names', async () => {
+    const names = ['France', 'Russia', 'Spain', 'Norway', 'Italy', 'Greece', 'United Kingdom'];
+    const rows = names.map((feature, value) => ({ feature, value }));
+    const { anchors, projection } = await labelAnchors(labelled('world', rows, EUROPE));
+
+    names.forEach((name) => {
+      const anchor = anchors.get(name);
+      const lonLat = projection.invert(anchor);
+      assert(
+        d3geo.geoContains(matchFeature('world', name), lonLat),
+        `${name} was labelled at ${JSON.stringify(anchor)}, which is not on it`,
+      );
+      assert(
+        anchor[0] >= 0 && anchor[0] <= VIEW.width && anchor[1] >= 0 && anchor[1] <= VIEW.height,
+        `${name} was labelled at ${JSON.stringify(anchor)}, off the canvas`,
+      );
+    });
+  });
+
+  it('keeps the anchor a data row named for itself', async () => {
+    // Brittany: nowhere near the centre of anything, so nothing else would
+    // produce it.
+    const center = { longitude: -3, latitude: 48.2 };
+    const { anchors, projection } = await labelAnchors(
+      labelled('world', [{ feature: 'France', value: 1, center }], EUROPE),
+    );
+    const expected = projection([center.longitude, center.latitude]);
+    const anchor = anchors.get('France');
+    assert(
+      Math.hypot(anchor[0] - expected[0], anchor[1] - expected[1]) < 0.5,
+      `anchor ${JSON.stringify(anchor)} is not the row's own ${JSON.stringify(expected)}`,
+    );
+  });
+
+  it('measures nothing for a chart that draws no labels', async () => {
+    const france = matchFeature('world', 'France');
+    // Both ways of settling it: the default for a geo chart, and an explicit no.
+    const charts = [
+      choropleth('world', [{ feature: 'France', value: 1 }], EUROPE),
+      labelled('world', [{ feature: 'France', value: 1 }], EUROPE, { display: false }),
+      labelled('world', [{ feature: 'France', value: 1 }], EUROPE, false),
+    ];
+    for (const chart of charts) {
+      // eslint-disable-next-line no-await-in-loop
+      const { anchors, projection } = await labelAnchors(chart);
+      const anchor = anchors.get('France');
+      const whole = d3geo.geoPath(projection).centroid(france);
+      assert(
+        Math.hypot(anchor[0] - whole[0], anchor[1] - whole[1]) < 0.5,
+        `anchor ${JSON.stringify(anchor)} was moved off the library's ${JSON.stringify(whole)}`,
+      );
+    }
+  });
+
+  it('anchors labels on a bubbleMap without touching its points', async () => {
+    // bubbleMap rows carry their own coordinates and its elements have no
+    // feature to measure, so the anchor pass must leave them exactly there.
+    const chart = {
+      type: 'bubbleMap',
+      data: {
+        datasets: [
+          {
+            map: 'world',
+            data: [{ longitude: 2.35, latitude: 48.86, value: 11 }],
+          },
+        ],
+      },
+      options: {
+        scales: { projection: { axis: 'x', ...EUROPE }, size: { axis: 'x' } },
+        plugins: { datalabels: { display: true } },
+      },
+    };
+    let anchor = null;
+    let expected = null;
+    chart.plugins = [
+      {
+        id: 'test-bubble-anchor',
+        afterUpdate(instance) {
+          const element = instance.getDatasetMeta(0).data[0];
+          anchor = [element.x, element.y];
+          expected = instance.scales.projection.projection([2.35, 48.86]);
+        },
+      },
+    ];
+    await renderChartJs(VIEW.width, VIEW.height, '#fff', 1, '4', 'png', chart);
+    assert(
+      Math.hypot(anchor[0] - expected[0], anchor[1] - expected[1]) < 0.5,
+      `point moved from ${JSON.stringify(expected)} to ${JSON.stringify(anchor)}`,
+    );
   });
 });
 

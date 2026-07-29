@@ -4,7 +4,7 @@ const assert = require('assert');
 
 const { renderChartJs } = require('../../lib/charts');
 const { Chart } = require('../../lib/chartjs');
-const { defaultFormatter } = require('../../lib/datalabels');
+const { defaultFormatter, mayDrawDataLabels } = require('../../lib/datalabels');
 const { ChartInputError } = require('../../lib/errors');
 const { getMap, matchFeature } = require('../../lib/maps');
 const { compileFunctionStrings } = require('../../lib/scriptable');
@@ -140,6 +140,85 @@ describe('datalabels default formatter', () => {
         assert(!label.includes('[object'), `${type} labelled a row as "${label}"`);
       });
     });
+  });
+});
+
+describe('whether labels can be drawn', () => {
+  // As `prepareChart` asks it: after the QuickChart defaults, which is what
+  // settles the question for a type that carries no labels of its own.
+  const chart = (datalabels, datasets = [{}]) => ({
+    data: { datasets },
+    options: { plugins: { datalabels } },
+  });
+
+  it('says no only when the config settles it', () => {
+    assert.strictEqual(mayDrawDataLabels(chart({ display: false })), false);
+    // chart.js's own way of switching a plugin off, which no dataset can undo.
+    assert.strictEqual(mayDrawDataLabels(chart(false)), false);
+    assert.strictEqual(mayDrawDataLabels(chart(false, [{ datalabels: { display: true } }])), false);
+    // Nothing to label.
+    assert.strictEqual(mayDrawDataLabels(chart({ display: true }, [])), false);
+    assert.strictEqual(mayDrawDataLabels({ options: {}, data: {} }), false);
+    assert.strictEqual(mayDrawDataLabels({}), false);
+  });
+
+  it('says no to a dataset config that does not turn labels back on', () => {
+    // Configuring `datalabels` on a dataset is not the same as enabling it: with
+    // the chart-level `display: false` a geo chart carries by default, each of
+    // these still draws nothing, and the work a label would read is wasted.
+    [{}, true, { display: false }, { color: 'red' }, { labels: { name: {} } }].forEach(
+      (datalabels) => {
+        assert.strictEqual(
+          mayDrawDataLabels(chart({ display: false }, [{ datalabels }])),
+          false,
+          `dataset datalabels: ${JSON.stringify(datalabels)}`,
+        );
+      },
+    );
+    // `false` on the dataset switches labels off for it whatever the chart says.
+    assert.strictEqual(mayDrawDataLabels(chart({ display: true }, [{ datalabels: false }])), false);
+    assert.strictEqual(mayDrawDataLabels(chart(undefined, [{ datalabels: false }])), false);
+    // Every named group off draws nothing, and a falsy group is skipped outright.
+    assert.strictEqual(
+      mayDrawDataLabels(chart({ display: true, labels: { name: { display: false } } })),
+      false,
+    );
+    assert.strictEqual(mayDrawDataLabels(chart({ display: true, labels: { name: false } })), false);
+  });
+
+  it('says yes to anything a label could still come out of', () => {
+    assert.strictEqual(mayDrawDataLabels(chart({ display: true })), true);
+    // Scriptable, so its answer is not knowable here.
+    assert.strictEqual(mayDrawDataLabels(chart({ display: () => false })), true);
+    assert.strictEqual(mayDrawDataLabels(chart({ display: 'auto' })), true);
+    // A named label group carries its own `display` over the merged one.
+    assert.strictEqual(
+      mayDrawDataLabels(chart({ display: false, labels: { name: { display: true } } })),
+      true,
+    );
+    assert.strictEqual(
+      mayDrawDataLabels(
+        chart({ display: false }, [{ datalabels: { labels: { n: { display: 1 } } } }]),
+      ),
+      true,
+    );
+    // One group of two is enough.
+    assert.strictEqual(
+      mayDrawDataLabels(chart({ labels: { a: { display: false }, b: { display: true } } })),
+      true,
+    );
+    // A dataset overrides the chart-level option, and one dataset is enough.
+    assert.strictEqual(
+      mayDrawDataLabels(chart({ display: false }, [{ datalabels: { display: true } }])),
+      true,
+    );
+    assert.strictEqual(
+      mayDrawDataLabels(chart({ display: true }, [{ datalabels: false }, {}])),
+      true,
+    );
+    // Unconfigured: the plugin's own default is to display.
+    assert.strictEqual(mayDrawDataLabels(chart(undefined)), true);
+    assert.strictEqual(mayDrawDataLabels(chart({})), true);
   });
 });
 
