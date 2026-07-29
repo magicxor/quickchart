@@ -431,6 +431,109 @@ describe('visible label anchor', () => {
     assert(narrow[0] < wide[0], `narrow anchor ${narrow[0]} is not left of wide ${wide[0]}`);
     assert(narrow[0] <= VIEW.width - 200, `narrow anchor ${narrow[0]} left its own extent`);
   });
+
+  it('leaves a region whose centre of area is on it at that centre', () => {
+    // The common case, and the one to keep still: a single part, wholly in view,
+    // is anchored at exactly the centre chartjs-chart-geo would have used.
+    const view = viewOf(EUROPE_BBOX);
+    const spain = matchFeature('world', 'Spain');
+    const anchor = view.anchor(spain);
+    const centre = view.wholeFeatureAnchor(spain);
+    assert(view.lands(centre, spain), 'the centre of area was not on Spain to begin with');
+    assert(
+      Math.hypot(anchor[0] - centre[0], anchor[1] - centre[1]) < 0.01,
+      `anchor ${JSON.stringify(anchor)} moved off the centre ${JSON.stringify(centre)}`,
+    );
+  });
+
+  it('anchors on the room in a region whose centre of area is off it', () => {
+    // A crescent curls around its own centre of area: Croatia's is in Bosnia.
+    const view = viewOf(EUROPE_BBOX);
+    const croatia = matchFeature('world', 'Croatia');
+    assert(
+      !view.lands(view.wholeFeatureAnchor(croatia), croatia),
+      'the centre of area was already on Croatia',
+    );
+
+    const anchor = view.anchor(croatia);
+    assert(view.lands(anchor, croatia), `anchor ${JSON.stringify(anchor)} is not on Croatia`);
+    assert(view.covers(anchor), `anchor ${JSON.stringify(anchor)} left the view`);
+  });
+
+  it('keeps out of the hole in a region that rings another', () => {
+    // What a US county that surrounds an independent city looks like: the centre
+    // of area is in the city, which is not part of the county at all.
+    //
+    // Wound d3's way, which is the opposite of GeoJSON's: the interior is to the
+    // right of an exterior ring, so the box below runs clockwise and its hole
+    // runs the other way. Wound as RFC 7946 says, this feature is the whole
+    // sphere minus the box (see `bboxOutline`), and every point is inside it.
+    const enclave = {
+      type: 'Feature',
+      properties: { name: 'Ring' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 40],
+            [0, 50],
+            [10, 50],
+            [10, 40],
+            [0, 40],
+          ],
+          [
+            [3, 43],
+            [7, 43],
+            [7, 47],
+            [3, 47],
+            [3, 43],
+          ],
+        ],
+      },
+    };
+    const view = viewOf([-2, 38, 12, 52]);
+    assert(!view.lands(view.wholeFeatureAnchor(enclave), enclave), 'the hole counted as inside');
+
+    const anchor = view.anchor(enclave);
+    assert(view.lands(anchor, enclave), `anchor ${JSON.stringify(anchor)} is in the hole`);
+  });
+
+  it('inverts through the projection it was given, not a reference to its method', () => {
+    // A caller may pass any object with a `stream` as the projection, and one
+    // whose `invert` reads `this` - a wrapper delegating to another projection,
+    // say - answers wrongly or throws when the method is called detached from it.
+    // That reads as "the centre of area is fine", which silently gives up on
+    // every region this is here to move.
+    const inner = viewOf(EUROPE_BBOX).projection;
+    const wrapper = {
+      inner,
+      stream: (sink) => inner.stream(sink),
+      invert(point) {
+        return this.inner.invert(point);
+      },
+    };
+    const croatia = matchFeature('world', 'Croatia');
+    const view = viewOf(EUROPE_BBOX);
+    const throughWrapper = visibleAnchorFor(wrapper, [
+      [0, 0],
+      [VIEW.width, VIEW.height],
+    ])(croatia);
+    assert.deepStrictEqual(throughWrapper, view.anchor(croatia));
+    assert(
+      view.lands(throughWrapper, croatia),
+      `anchor ${JSON.stringify(throughWrapper)} is off it`,
+    );
+  });
+
+  it('anchors within the visible part of a region the view cuts through', () => {
+    // Both halves at once: Croatia crescent-shaped and half out of frame, so the
+    // room has to be found in what is left rather than in the whole shape.
+    const view = viewOf([13, 44, 20, 47]);
+    const croatia = matchFeature('world', 'Croatia');
+    const anchor = view.anchor(croatia);
+    assert(view.covers(anchor), `anchor ${JSON.stringify(anchor)} left the view`);
+    assert(view.lands(anchor, croatia), `anchor ${JSON.stringify(anchor)} is not on Croatia`);
+  });
 });
 
 const CANVAS = { width: 400, height: 300 };
