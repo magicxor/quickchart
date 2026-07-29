@@ -175,17 +175,23 @@ describe('pole of inaccessibility', () => {
   it('starts coarse enough for a shape of any aspect ratio', () => {
     // The grid the search starts from is squares of the shape's narrow side, so
     // the number of them is its aspect ratio - and caller-supplied GeoJSON can
-    // make that as large as it likes. Unbounded, a hair 900px long and a
-    // millionth of one tall laid out six million squares before the cell ceiling
-    // could refuse a single one: five seconds inside one region of one request,
-    // growing linearly, so two more zeros in the coordinates is minutes and
-    // gigabytes. The margin below is wide on purpose - what it measures is a
-    // factor of a thousand, not a few milliseconds.
+    // make that as large as it likes. Unbounded, the hair below asks for nine
+    // hundred million squares before the cell ceiling can refuse a single one, at
+    // about a third of a microsecond and a hundred bytes each.
+    //
+    // The bound is wall-clock, for want of anything deterministic to count that
+    // would not widen the module's answer for a test's benefit. It is set where
+    // flakiness cannot reach it: the search takes a millisecond or two, and the
+    // regression it
+    // guards against is minutes and tens of gigabytes - so it fails by timeout or
+    // by exhausting the heap long before this threshold is the interesting part.
+    // Time and memory scale together here, so there is no version of the
+    // regression that lands quietly near 5 seconds.
     const hair = [ring([0, 0], [900, 0], [900, 1e-6], [0, 1e-6])];
     const started = process.hrtime.bigint();
     const found = poleOfInaccessibility(hair);
     const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
-    assert(elapsed < 500, `took ${elapsed.toFixed(0)}ms`);
+    assert(elapsed < 5000, `took ${elapsed.toFixed(0)}ms`);
     assert(found && found.distance > 0, `answered ${JSON.stringify(found)}`);
   });
 

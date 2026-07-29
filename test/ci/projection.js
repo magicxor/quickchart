@@ -498,6 +498,33 @@ describe('visible label anchor', () => {
     assert(view.lands(anchor, enclave), `anchor ${JSON.stringify(anchor)} is in the hole`);
   });
 
+  it('inverts through the projection it was given, not a reference to its method', () => {
+    // A caller may pass any object with a `stream` as the projection, and one
+    // whose `invert` reads `this` - a wrapper delegating to another projection,
+    // say - answers wrongly or throws when the method is called detached from it.
+    // That reads as "the centre of area is fine", which silently gives up on
+    // every region this is here to move.
+    const inner = viewOf(EUROPE_BBOX).projection;
+    const wrapper = {
+      inner,
+      stream: (sink) => inner.stream(sink),
+      invert(point) {
+        return this.inner.invert(point);
+      },
+    };
+    const croatia = matchFeature('world', 'Croatia');
+    const view = viewOf(EUROPE_BBOX);
+    const throughWrapper = visibleAnchorFor(wrapper, [
+      [0, 0],
+      [VIEW.width, VIEW.height],
+    ])(croatia);
+    assert.deepStrictEqual(throughWrapper, view.anchor(croatia));
+    assert(
+      view.lands(throughWrapper, croatia),
+      `anchor ${JSON.stringify(throughWrapper)} is off it`,
+    );
+  });
+
   it('anchors within the visible part of a region the view cuts through', () => {
     // Both halves at once: Croatia crescent-shaped and half out of frame, so the
     // room has to be found in what is left rather than in the whole shape.
