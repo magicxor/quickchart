@@ -153,9 +153,11 @@ describe('whether labels can be drawn', () => {
 
   it('says no only when the config settles it', () => {
     assert.strictEqual(mayDrawDataLabels(chart({ display: false })), false);
-    // chart.js's own way of switching a plugin off, which no dataset can undo.
+    // The two values chart.js reads as "plugin off", which no dataset can undo.
     assert.strictEqual(mayDrawDataLabels(chart(false)), false);
+    assert.strictEqual(mayDrawDataLabels(chart(null)), false);
     assert.strictEqual(mayDrawDataLabels(chart(false, [{ datalabels: { display: true } }])), false);
+    assert.strictEqual(mayDrawDataLabels(chart(null, [{ datalabels: { display: true } }])), false);
     // Nothing to label.
     assert.strictEqual(mayDrawDataLabels(chart({ display: true }, [])), false);
     assert.strictEqual(mayDrawDataLabels({ options: {}, data: {} }), false);
@@ -504,11 +506,10 @@ describe('a dataset that says datalabels: false', () => {
     );
   });
 
-  it('is rejected however the chart-level option is set', async () => {
-    // Including `plugins.datalabels: false`, which reads like it would switch the
-    // whole plugin off but is rewritten to `{ display: false }` here, leaving the
-    // hook that trips over the dataset in place.
-    for (const datalabels of [false, { display: false }, { display: true }, undefined]) {
+  it('is rejected for every chart-level option that leaves the plugin live', async () => {
+    // Including `0`, which chart.js does not read as "off" and which this server
+    // replaces with its own defaults - either way the hook still runs.
+    for (const datalabels of [{ display: false }, { display: true }, true, undefined, 0]) {
       // eslint-disable-next-line no-await-in-loop
       await assert.rejects(
         renderChartJs(
@@ -523,6 +524,24 @@ describe('a dataset that says datalabels: false', () => {
         (err) => err instanceof ChartInputError && err.statusCode === 400,
         `expected a 400 with chart-level datalabels: ${JSON.stringify(datalabels)}`,
       );
+    }
+  });
+
+  it('needs no refusing when the plugin is switched off for the chart', async () => {
+    // chart.js gives a switched-off plugin no hooks, so there is no null for it
+    // to trip over and nothing here to refuse.
+    for (const datalabels of [false, null]) {
+      // eslint-disable-next-line no-await-in-loop
+      const buf = await renderChartJs(
+        200,
+        150,
+        '#fff',
+        1,
+        '4',
+        'png',
+        bar([{ data: [5], datalabels: false }], { plugins: { datalabels } }),
+      );
+      assert(buf.length > 0, `chart-level datalabels: ${JSON.stringify(datalabels)} failed`);
     }
   });
 
@@ -550,6 +569,85 @@ describe('a dataset that says datalabels: false', () => {
         bar([{ data: [5], datalabels }], { plugins: { datalabels: { display: true } } }),
       );
       assert(buf.length > 0, `datalabels: ${JSON.stringify(datalabels)} failed to render`);
+    }
+  });
+});
+
+/**
+ * Whether the plugin ended up with a label to draw. `$datalabels` is its own
+ * per-chart state and a label carries a model only once its `display` resolved
+ * true; state that is absent altogether means chart.js never gave the plugin a
+ * hook to build one in, i.e. the plugin was switched off for the chart.
+ */
+async function labelsDrawn(chart) {
+  const drawn = [];
+  chart.plugins = [
+    {
+      id: 'test-labels-drawn',
+      afterUpdate(instance) {
+        const state = instance.$datalabels;
+        drawn.push(((state && state._labels) || []).some((label) => label.model()));
+      },
+    },
+  ];
+  await renderChartJs(200, 150, '#fff', 1, '4', 'png', chart);
+  return drawn.some(Boolean);
+}
+
+describe('switching datalabels off for a whole chart', () => {
+  const chartOf = (type, plugins) => ({
+    type,
+    data: { labels: ['a', 'b'], datasets: [{ data: [5, 3] }] },
+    options: { plugins: { legend: { display: false }, ...plugins } },
+  });
+
+  it('honours the values chart.js reads as "plugin off"', async () => {
+    // The falsy check this used to make overwrote them with the defaults below,
+    // and for a pie that default is `display: true` - so a caller who switched
+    // labelling off got a labelled chart.
+    for (const type of ['pie', 'doughnut', 'funnel', 'bar']) {
+      for (const datalabels of [false, null]) {
+        // eslint-disable-next-line no-await-in-loop
+        const drawn = await labelsDrawn(chartOf(type, { datalabels }));
+        assert.strictEqual(drawn, false, `${type} with datalabels: ${datalabels} drew labels`);
+      }
+    }
+  });
+
+  it('is not undone by a dataset asking for labels', async () => {
+    const chart = chartOf('bar', { datalabels: false });
+    chart.data.datasets[0].datalabels = { display: true };
+    assert.strictEqual(await labelsDrawn(chart), false);
+  });
+
+  it('still applies this server’s defaults to everything else', async () => {
+    // Unchanged behavior: labelled for the types with no axis to read a value
+    // off, unlabelled elsewhere...
+    assert.strictEqual(await labelsDrawn(chartOf('pie')), true);
+    assert.strictEqual(await labelsDrawn(chartOf('bar')), false);
+    // ...and a stray falsy that chart.js does not read as "off" is not a
+    // configuration either, so it gets those same defaults rather than reaching
+    // the plugin as its options.
+    for (const junk of [0, '']) {
+      // eslint-disable-next-line no-await-in-loop
+      assert.strictEqual(
+        await labelsDrawn(chartOf('bar', { datalabels: junk })),
+        false,
+        `bar with datalabels: ${JSON.stringify(junk)} drew labels`,
+      );
+    }
+  });
+
+  it('leaves a configured option exactly as the caller wrote it', async () => {
+    for (const datalabels of [false, null, true, { display: true }]) {
+      const chart = chartOf('bar', { datalabels });
+      // eslint-disable-next-line no-await-in-loop
+      await renderChartJs(200, 150, '#fff', 1, '4', 'png', chart);
+      assert.deepStrictEqual(
+        chart.options.plugins.datalabels,
+        datalabels,
+        `chart-level ${JSON.stringify(datalabels)} was rewritten`,
+      );
     }
   });
 });

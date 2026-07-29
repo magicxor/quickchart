@@ -89,7 +89,7 @@ A compiled source runs like any other Javascript in a config.  A config sent as 
 
 ### Data labels
 
-`options.plugins.datalabels` draws values onto the chart.  It is on by default for the types that draw no axis to read a value off — pie, doughnut, funnel — and off elsewhere, so `display: true` (or any other datalabels option) turns it on.  The default label text understands the object data shapes this server renders — the plugin's own default stringifies most of them as `[object Object]`:
+`options.plugins.datalabels` draws values onto the chart.  It is on by default for the types that draw no axis to read a value off — pie, doughnut, funnel — and off elsewhere, so `display: true` (or any other datalabels option) turns it on.  `"datalabels": false` switches the plugin off for the whole chart, the way chart.js switches off any plugin, and nothing a dataset says can turn it back on.  The default label text understands the object data shapes this server renders — the plugin's own default stringifies most of them as `[object Object]`:
 
 | Data shape | Default label |
 |---|---|
