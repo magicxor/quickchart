@@ -89,7 +89,7 @@ A compiled source runs like any other Javascript in a config.  A config sent as 
 
 ### Data labels
 
-`options.plugins.datalabels` draws values onto the chart.  It is on by default for the types that draw no axis to read a value off — pie, doughnut, funnel — and off elsewhere, so `display: true` (or any other datalabels option) turns it on.  The default label text understands the object data shapes this server renders — the plugin's own default stringifies most of them as `[object Object]`:
+`options.plugins.datalabels` draws values onto the chart.  It is on by default for the types that draw no axis to read a value off — pie, doughnut, funnel — and off elsewhere, so `display: true` (or any other datalabels option) turns it on.  `"datalabels": false` switches the plugin off for the whole chart, the way chart.js switches off any plugin, and nothing a dataset says can turn it back on.  The default label text understands the object data shapes this server renders — the plugin's own default stringifies most of them as `[object Object]`:
 
 | Data shape | Default label |
 |---|---|
@@ -104,6 +104,8 @@ A compiled source runs like any other Javascript in a config.  A config sent as 
 A funnel labels its stages this way rather than as chartjs-chart-funnel does, which reads every value as a fraction of 1 and prints an absolute count of 600 as "60,000%".
 
 A `formatter` of your own overrides all of it; return an array of strings for a multi-line label.
+
+Options can also be set per dataset, as `dataset.datalabels`.  To switch labels off for one dataset write `"datalabels": { "display": false }` — a bare `"datalabels": false` there is refused with a 400, because chartjs-plugin-datalabels cannot render it (its own code reads that value as "no labels at all for this dataset" and then fails on the null it made for it).
 
 Where a label goes is a separate question from what it says, and on a map it is a hard one — see [Geo charts and built-in maps](#geo-charts-and-built-in-maps) for how regions are anchored and how to place one yourself.
 
