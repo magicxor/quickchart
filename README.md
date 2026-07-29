@@ -105,6 +105,8 @@ A funnel labels its stages this way rather than as chartjs-chart-funnel does, wh
 
 A `formatter` of your own overrides all of it; return an array of strings for a multi-line label.
 
+Options can also be set per dataset, as `dataset.datalabels`.  To switch labels off for one dataset write `"datalabels": { "display": false }` — a bare `"datalabels": false` there is refused with a 400, because chartjs-plugin-datalabels cannot render it (its own code reads that value as "no labels at all for this dataset" and then fails on the null it made for it).
+
 Where a label goes is a separate question from what it says, and on a map it is a hard one — see [Geo charts and built-in maps](#geo-charts-and-built-in-maps) for how regions are anchored and how to place one yourself.
 
 ### Included chart plugins

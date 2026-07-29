@@ -468,3 +468,88 @@ describe('labelled charts render', () => {
     assert.strictEqual(chart.data.labels[0], 'function() {}');
   });
 });
+
+describe('a dataset that says datalabels: false', () => {
+  const bar = (datasets, options) => ({
+    type: 'bar',
+    data: { labels: ['a'], datasets },
+    ...(options ? { options } : {}),
+  });
+
+  it('is reported as a 400 naming the spelling that works', async () => {
+    await assert.rejects(
+      renderChartJs(200, 150, '#fff', 1, '4', 'png', bar([{ data: [5], datalabels: false }])),
+      (err) =>
+        err instanceof ChartInputError &&
+        err.statusCode === 400 &&
+        err.message.includes('Dataset 0') &&
+        err.message.includes('"datalabels": { "display": false }'),
+      'expected a 400 pointing at the display option',
+    );
+  });
+
+  it('names which dataset it was', async () => {
+    await assert.rejects(
+      renderChartJs(
+        200,
+        150,
+        '#fff',
+        1,
+        '4',
+        'png',
+        bar([{ data: [5] }, { data: [3], datalabels: false }]),
+      ),
+      (err) => err.message.includes('Dataset 1'),
+      'expected the message to name dataset 1',
+    );
+  });
+
+  it('is rejected however the chart-level option is set', async () => {
+    // Including `plugins.datalabels: false`, which reads like it would switch the
+    // whole plugin off but is rewritten to `{ display: false }` here, leaving the
+    // hook that trips over the dataset in place.
+    for (const datalabels of [false, { display: false }, { display: true }, undefined]) {
+      // eslint-disable-next-line no-await-in-loop
+      await assert.rejects(
+        renderChartJs(
+          200,
+          150,
+          '#fff',
+          1,
+          '4',
+          'png',
+          bar([{ data: [5], datalabels: false }], { plugins: { datalabels } }),
+        ),
+        (err) => err instanceof ChartInputError && err.statusCode === 400,
+        `expected a 400 with chart-level datalabels: ${JSON.stringify(datalabels)}`,
+      );
+    }
+  });
+
+  it('is rejected for a dataset with no data of its own', async () => {
+    // The plugin trips over a different null for this one, in the same hook.
+    await assert.rejects(
+      renderChartJs(200, 150, '#fff', 1, '4', 'png', bar([{ data: [], datalabels: false }])),
+      (err) => err instanceof ChartInputError && err.statusCode === 400,
+    );
+  });
+
+  it('leaves every value that does render alone', async () => {
+    // `true` means "no overrides of my own"; a non-object merges over the
+    // chart-level options as nothing. None of these is the crashing shape, so
+    // none of them may start failing here.
+    for (const datalabels of [true, { display: false }, { display: true }, null, 0, '', 'x']) {
+      // eslint-disable-next-line no-await-in-loop
+      const buf = await renderChartJs(
+        200,
+        150,
+        '#fff',
+        1,
+        '4',
+        'png',
+        bar([{ data: [5], datalabels }], { plugins: { datalabels: { display: true } } }),
+      );
+      assert(buf.length > 0, `datalabels: ${JSON.stringify(datalabels)} failed to render`);
+    }
+  });
+});
