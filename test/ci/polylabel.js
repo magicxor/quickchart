@@ -172,6 +172,42 @@ describe('pole of inaccessibility', () => {
     );
   });
 
+  it('starts coarse enough for a shape of any aspect ratio', () => {
+    // The grid the search starts from is squares of the shape's narrow side, so
+    // the number of them is its aspect ratio - and caller-supplied GeoJSON can
+    // make that as large as it likes. Unbounded, a hair 900px long and a
+    // millionth of one tall laid out six million squares before the cell ceiling
+    // could refuse a single one: five seconds inside one region of one request,
+    // growing linearly, so two more zeros in the coordinates is minutes and
+    // gigabytes. The margin below is wide on purpose - what it measures is a
+    // factor of a thousand, not a few milliseconds.
+    const hair = [ring([0, 0], [900, 0], [900, 1e-6], [0, 1e-6])];
+    const started = process.hrtime.bigint();
+    const found = poleOfInaccessibility(hair);
+    const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
+    assert(elapsed < 500, `took ${elapsed.toFixed(0)}ms`);
+    assert(found && found.distance > 0, `answered ${JSON.stringify(found)}`);
+  });
+
+  it('holds its precision when the starting grid is capped', () => {
+    // A rectangle's pole is half its narrow side however long it is, so there is
+    // an exact answer to measure the coarser start against.
+    [
+      [1000, 2], // aspect 500, under the cap
+      [1000, 0.2], // aspect 5000, over it
+    ].forEach(([width, height]) => {
+      const found = poleOfInaccessibility([ring([0, 0], [width, 0], [width, height], [0, height])]);
+      assert(found, `no pole for ${width}x${height}`);
+      assert(found.distance > 0, `${width}x${height}: distance ${found.distance}`);
+      // Within the precision the search promises, and never claiming more room
+      // than the shape has.
+      assert(
+        height / 2 - found.distance <= 0.5 && found.distance <= height / 2 + 1e-9,
+        `${width}x${height}: found ${found.distance}, exact ${height / 2}`,
+      );
+    });
+  });
+
   it('matches an exhaustive search over awkward shapes', () => {
     // Star polygons with random radii: reliably concave, and reliably centred on
     // nothing in particular.
