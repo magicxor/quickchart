@@ -131,6 +131,47 @@ describe('pole of inaccessibility', () => {
     });
   });
 
+  it('ignores a vertex it cannot read, and searches the rest of the ring', () => {
+    // Coordinates arrive from caller-supplied GeoJSON and from a projection, so
+    // any of these can turn up in an otherwise usable outline. Each has to leave
+    // the answer as if the vertex had not been there - a NaN reaching the
+    // arithmetic makes every comparison against it false, which disables the
+    // pruning that ends the search and costs hundreds of milliseconds on a
+    // detailed ring before it reports nothing.
+    const clean = poleOfInaccessibility([square(0, 0, 100)]);
+    const corners = square(0, 0, 100).slice(0, 4);
+    [
+      [NaN, 50],
+      [50, NaN],
+      [Infinity, 50],
+      [-Infinity, 50],
+      ['50', 50],
+      [null, null],
+      [undefined, undefined],
+      [50],
+      [],
+      'not a point',
+      null,
+      42,
+      { x: 50, y: 50 },
+    ].forEach((vertex) => {
+      const found = poleOfInaccessibility([[...corners, vertex, corners[0]]]);
+      assert.deepStrictEqual(
+        found,
+        clean,
+        `vertex ${JSON.stringify(vertex)} changed the answer to ${JSON.stringify(found)}`,
+      );
+    });
+  });
+
+  it('reports nothing when too few vertices are left to enclose anything', () => {
+    // Dropping the unreadable ones can take a ring below a shape.
+    assert.strictEqual(
+      poleOfInaccessibility([[[0, 0], [10, 0], [NaN, 10], ['x', 20], null]]),
+      null,
+    );
+  });
+
   it('matches an exhaustive search over awkward shapes', () => {
     // Star polygons with random radii: reliably concave, and reliably centred on
     // nothing in particular.
