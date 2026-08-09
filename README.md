@@ -109,6 +109,14 @@ Options can also be set per dataset, as `dataset.datalabels`.  To switch labels 
 
 Where a label goes is a separate question from what it says, and on a map it is a hard one — see [Geo charts and built-in maps](#geo-charts-and-built-in-maps) for how regions are anchored and how to place one yourself.
 
+### Room for labels outside the plot area
+
+Labels are anchored to data positions but sized in pixels, so nothing stops one from reaching past the plot area — a datalabel pushed above the top-most point, or a label annotation flying a "flag" over a timeline with `yAdjust`.  Chart.js reserves no room there: the annotation plugin clips such ink against the plot area (its `clip` default), and whatever escapes is cut by the canvas edge, or lands on the title with `clip: false`.  Adding canvas height does not help, because the plot grows along with it.
+
+This server measures where the drawn labels of chartjs-plugin-annotation and chartjs-plugin-datalabels actually land, and lays the chart out again with that much room held open between the plot and its neighbours, so the flags come out whole, under the title and off the axis labels.  The room comes out of the plot area, which is never reduced below a quarter of the canvas; if the labels ask for more than that, they get all the room there is and are cut where they always were.
+
+The annotation plugin's `clip` option is honoured when you set it — `true` keeps everything cut at the plot edge, `false` draws outside but now with room reserved.  When you leave it unset, the server turns it off exactly when every annotation demonstrably fits in the reserved room (your config will read `clip: false` afterwards); geometry that could never fit — say a box annotation stretched to `yMax: 1e9` as a "shade everything above" band — keeps its clipped look, and so does a datalabel with `clip: true`.  Charts with no annotations and no labels to draw skip all of this, and the graph family (`graph`, `forceDirectedGraph`, `dendrogram`, `tree`) is excluded because its layout settles asynchronously, after the measuring would happen.
+
 ### Included chart plugins
 
 The following plugins are registered and ready to use:
@@ -396,6 +404,7 @@ This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 - **Google Image Charts compatibility removed** (`/gchart` and `cht=` parameters).
 - **Graphviz rendering removed.**
 - **Callbacks may be quoted in a JSON config** and are compiled instead of silently ignored, and the datalabels default label understands geo and `{x, y}` data instead of stringifying it — see [Callbacks and scriptable options](#callbacks-and-scriptable-options) and [Data labels](#data-labels).
+- **Labels that reach outside the plot area get room reserved for them** instead of being clipped at the plot edge or drawn over the title — see [Room for labels outside the plot area](#room-for-labels-outside-the-plot-area).
 - **`width`/`height` are optional** and derived from the chart when omitted, rather than defaulting to a fixed 500×300 — see [Canvas size](#canvas-size).
 - **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.
 - **Telemetry is opt-in** (`ENABLE_TELEMETRY`); the `POST /telemetry` aggregation endpoint is removed.
