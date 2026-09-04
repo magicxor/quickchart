@@ -7,7 +7,7 @@ const { Chart } = require('../../lib/chartjs');
 const { defaultFormatter, mayDrawDataLabels } = require('../../lib/datalabels');
 const { ChartInputError } = require('../../lib/errors');
 const { getMap, matchFeature } = require('../../lib/maps');
-const { compileFunctionStrings } = require('../../lib/scriptable');
+const { rejectFunctionStrings } = require('../../lib/scriptable');
 
 // A datalabels formatter context, of which the formatter uses the chart type,
 // the dataset (for mixed charts), `indexAxis` and the category labels (funnel).
@@ -51,6 +51,51 @@ describe('datalabels default formatter', () => {
   it('prefers a row label over the feature name', () => {
     const row = { feature: matchFeature('blr', 'Brest'), label: 'Брестская', value: 1348 };
     assert.deepStrictEqual(defaultFormatter(row, context('choropleth')), ['Брестская', '1348']);
+  });
+
+  it('prints an array label one line each, with the value under the last', () => {
+    const feature = matchFeature('blr', 'Brest');
+    assert.deepStrictEqual(
+      defaultFormatter({ feature, label: ['Брест', 'Брестская область'] }, context('choropleth')),
+      ['Брест', 'Брестская область'],
+    );
+    assert.deepStrictEqual(
+      defaultFormatter({ feature, label: ['Брест', 'запад'], value: 1348 }, context('choropleth')),
+      ['Брест', 'запад', '1348'],
+    );
+    const point = { longitude: 27.56, latitude: 53.9, label: ['Минск', 'столица'], value: 1996 };
+    assert.deepStrictEqual(defaultFormatter(point, context('bubbleMap')), [
+      'Минск',
+      'столица',
+      '1996',
+    ]);
+    assert.deepStrictEqual(
+      defaultFormatter({ x: 'Мар', y: 21, label: ['21%', 'рекорд'] }, context('bar')),
+      ['21%', 'рекорд'],
+    );
+    // One line comes out as the string the plugin draws for a single line.
+    assert.strictEqual(
+      defaultFormatter({ x: 'Мар', y: 21, label: ['21%'] }, context('bar')),
+      '21%',
+    );
+  });
+
+  it('keeps only the readable lines of an array label', () => {
+    const feature = matchFeature('blr', 'Brest');
+    assert.deepStrictEqual(
+      defaultFormatter({ feature, label: ['Брест', { ru: 'x' }, 2, null] }, context('choropleth')),
+      ['Брест', '2'],
+    );
+    // A label with nothing readable in it leaves the region its map name.
+    assert.strictEqual(defaultFormatter({ feature, label: [] }, context('choropleth')), 'Brest');
+    assert.strictEqual(defaultFormatter({ feature, label: [{}] }, context('choropleth')), 'Brest');
+    assert.strictEqual(
+      defaultFormatter({ feature, label: { ru: 'x' } }, context('choropleth')),
+      'Brest',
+    );
+    // Only `label` spans lines: an array elsewhere is a datum's own shape, a
+    // floating bar's `[min, max]`, and is not a label.
+    assert.strictEqual(defaultFormatter({ x: 'a', y: [10, 20] }, context('bar')), 'x: a');
   });
 
   it('falls back to a feature id when the feature has no name', () => {
@@ -116,8 +161,8 @@ describe('datalabels default formatter', () => {
   });
 
   it('skips members that have no text form, rather than throwing on them', () => {
-    // A JS config can hold anything; a symbol throws when concatenated, and a
-    // function would print its whole source.
+    // Data is whatever reaches the formatter; a symbol throws when concatenated,
+    // and a function would print its whole source.
     const datum = { min: 1, tag: Symbol('q'), fn: () => 1, n: 10n, ok: true };
     assert.strictEqual(defaultFormatter(datum, context('boxplot')), 'min: 1, n: 10, ok: true');
   });
@@ -225,48 +270,78 @@ describe('whether labels can be drawn', () => {
 });
 
 describe('quoted function options', () => {
-  it('compiles a function expression string', () => {
-    const chart = {
-      options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; }' } } },
-    };
-    compileFunctionStrings(chart);
-    const { formatter } = chart.options.plugins.datalabels;
-    assert.strictEqual(typeof formatter, 'function');
-    assert.strictEqual(formatter({ y: 5 }), 5);
+  // A 400 that names the option, for a config that has code where a value belongs.
+  const rejects = (chart, option) =>
+    assert.throws(
+      () => rejectFunctionStrings(chart),
+      (err) =>
+        err instanceof ChartInputError &&
+        err.statusCode === 400 &&
+        err.message.includes(`"${option}"`) &&
+        err.message.includes('does not execute'),
+    );
+
+  it('refuses a function expression string, naming the option', () => {
+    rejects(
+      { options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; }' } } } },
+      'options.plugins.datalabels.formatter',
+    );
   });
 
-  it('compiles arrow functions, named and async ones', () => {
-    const chart = {
-      options: {
-        plugins: {
-          datalabels: { display: '(ctx) => ctx.dataIndex > 0', color: 'v => "red"' },
-          tooltip: { callbacks: { label: 'function label(item) { return item.formattedValue; }' } },
-        },
-        scales: { y: { ticks: { callback: 'async function(v) { return v; }' } } },
-      },
-    };
-    compileFunctionStrings(chart);
-    assert.strictEqual(chart.options.plugins.datalabels.display({ dataIndex: 1 }), true);
-    assert.strictEqual(chart.options.plugins.datalabels.color(), 'red');
-    assert.strictEqual(typeof chart.options.plugins.tooltip.callbacks.label, 'function');
-    assert.strictEqual(typeof chart.options.scales.y.ticks.callback, 'function');
-  });
-
-  it('compiles scriptable dataset options', () => {
-    const chart = {
-      data: {
-        datasets: [
-          {
-            label: 'Dogs',
-            backgroundColor: 'function(ctx) { return ctx.raw > 0 ? "green" : "red"; }',
-            data: [1, 2],
+  it('refuses arrow functions, named and async ones wherever a function belongs', () => {
+    rejects(
+      { options: { plugins: { datalabels: { display: '(ctx) => ctx.dataIndex > 0' } } } },
+      'options.plugins.datalabels.display',
+    );
+    rejects(
+      { options: { plugins: { datalabels: { color: 'v => "red"' } } } },
+      'options.plugins.datalabels.color',
+    );
+    rejects(
+      {
+        options: {
+          plugins: {
+            tooltip: {
+              callbacks: { label: 'function label(item) { return item.formattedValue; }' },
+            },
           },
-        ],
+        },
       },
-    };
-    compileFunctionStrings(chart);
-    assert.strictEqual(typeof chart.data.datasets[0].backgroundColor, 'function');
-    assert.strictEqual(chart.data.datasets[0].backgroundColor({ raw: 1 }), 'green');
+      'options.plugins.tooltip.callbacks.label',
+    );
+    rejects(
+      { options: { scales: { y: { ticks: { callback: 'async function(v) { return v; }' } } } } },
+      'options.scales.y.ticks.callback',
+    );
+  });
+
+  it('refuses scriptable dataset options', () => {
+    rejects(
+      {
+        data: {
+          datasets: [
+            {
+              label: 'Dogs',
+              backgroundColor: 'function(ctx) { return ctx.raw > 0 ? "green" : "red"; }',
+              data: [1, 2],
+            },
+          ],
+        },
+      },
+      'data.datasets[0].backgroundColor',
+    );
+  });
+
+  it('refuses a source whether or not it would run', () => {
+    // Code where a value belongs is refused as such; nothing here parses it.
+    rejects(
+      { options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; ' } } } },
+      'options.plugins.datalabels.formatter',
+    );
+    rejects(
+      { options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; }()' } } } },
+      'options.plugins.datalabels.formatter',
+    );
   });
 
   it('leaves ordinary text alone', () => {
@@ -283,93 +358,53 @@ describe('quoted function options', () => {
       },
     };
     const before = JSON.parse(JSON.stringify(chart));
-    compileFunctionStrings(chart);
+    assert.doesNotThrow(() => rejectFunctionStrings(chart));
     assert.deepStrictEqual(chart, before);
   });
 
-  it('compiles names that are text elsewhere only where a function belongs', () => {
+  it('refuses names that are text elsewhere only where a function belongs', () => {
     // A legend entry that happens to read like an arrow function is text; the
     // same name under the tooltip's callbacks is code.
-    const chart = {
+    const text = {
       data: { datasets: [{ label: 'x => y', title: 'f(x) => y', data: [1] }] },
-      options: {
-        scales: { x: { title: { text: 'x => y' } } },
-        plugins: {
-          tooltip: {
-            callbacks: { label: '(item) => item.formattedValue + " шт"', title: 'x => "T"' },
-          },
-          annotation: {
-            annotations: {
-              line1: { label: { content: '(ctx) => "peak"' }, value: 'v => 5' },
-            },
-          },
-        },
-      },
+      options: { scales: { x: { title: { text: 'x => y' } } } },
     };
-    compileFunctionStrings(chart);
+    assert.doesNotThrow(() => rejectFunctionStrings(text));
 
-    assert.strictEqual(chart.data.datasets[0].label, 'x => y');
-    assert.strictEqual(chart.data.datasets[0].title, 'f(x) => y');
-    assert.strictEqual(chart.options.scales.x.title.text, 'x => y');
-    assert.strictEqual(typeof chart.options.plugins.tooltip.callbacks.label, 'function');
-    assert.strictEqual(typeof chart.options.plugins.tooltip.callbacks.title, 'function');
-    const { line1 } = chart.options.plugins.annotation.annotations;
-    assert.strictEqual(typeof line1.label.content, 'function');
-    assert.strictEqual(typeof line1.value, 'function');
+    const tooltip = (callbacks) => ({ options: { plugins: { tooltip: { callbacks } } } });
+    rejects(
+      tooltip({ label: '(item) => item.formattedValue + " шт"' }),
+      'options.plugins.tooltip.callbacks.label',
+    );
+    rejects(tooltip({ title: 'x => "T"' }), 'options.plugins.tooltip.callbacks.title');
+
+    const annotation = (line1) => ({
+      options: { plugins: { annotation: { annotations: { line1 } } } },
+    });
+    rejects(
+      annotation({ label: { content: '(ctx) => "peak"' } }),
+      'options.plugins.annotation.annotations.line1.label.content',
+    );
+    rejects(annotation({ value: 'v => 5' }), 'options.plugins.annotation.annotations.line1.value');
   });
 
-  it('does not reject a legend entry whose "body" would not parse', () => {
-    // Compiling this one would fail to parse and turn a fine chart into a 400.
+  it('does not refuse a legend entry whose "body" would not parse', () => {
     const chart = { data: { datasets: [{ label: 'y => 100%', data: [1] }] } };
-    assert.doesNotThrow(() => compileFunctionStrings(chart));
-    assert.strictEqual(chart.data.datasets[0].label, 'y => 100%');
+    assert.doesNotThrow(() => rejectFunctionStrings(chart));
   });
 
-  it('leaves real functions and other values untouched', () => {
-    const formatter = (v) => v.y;
-    const chart = { options: { plugins: { datalabels: { formatter, display: true, offset: 4 } } } };
-    compileFunctionStrings(chart);
-    assert.strictEqual(chart.options.plugins.datalabels.formatter, formatter);
-    assert.strictEqual(chart.options.plugins.datalabels.display, true);
-    assert.strictEqual(chart.options.plugins.datalabels.offset, 4);
-  });
-
-  it('rejects a function string that does not parse, naming the option', () => {
+  it('looks at strings only', () => {
     const chart = {
-      options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; ' } } },
+      options: { plugins: { datalabels: { display: true, offset: 4, font: { size: 12 } } } },
     };
-    assert.throws(
-      () => compileFunctionStrings(chart),
-      (err) =>
-        err instanceof ChartInputError &&
-        err.statusCode === 400 &&
-        err.message.includes('options.plugins.datalabels.formatter'),
-    );
-  });
-
-  it('rejects a source that calls a function instead of being one', () => {
-    // `new Function` evaluates this, so the call runs - config Javascript is
-    // trusted and executed either way. What must not happen is the result being
-    // dropped and the string left in the config, where Chart.js reads it as
-    // truthy text and silently mislabels the chart.
-    const chart = {
-      options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; }()' } } },
-    };
-    assert.throws(
-      () => compileFunctionStrings(chart),
-      (err) =>
-        err instanceof ChartInputError &&
-        err.statusCode === 400 &&
-        err.message.includes('options.plugins.datalabels.formatter') &&
-        err.message.includes('undefined'),
-    );
+    assert.doesNotThrow(() => rejectFunctionStrings(chart));
   });
 
   it('tolerates configs that are not objects', () => {
     assert.doesNotThrow(() => {
-      compileFunctionStrings(null);
-      compileFunctionStrings('bar');
-      compileFunctionStrings([1, 2]);
+      rejectFunctionStrings(null);
+      rejectFunctionStrings('bar');
+      rejectFunctionStrings([1, 2]);
     });
   });
 });
@@ -402,7 +437,31 @@ describe('labelled charts render', () => {
     assert.strictEqual(typeof chart.data.datasets[0].data[0].feature, 'object');
   });
 
-  it('honors a quoted formatter through a full render', async () => {
+  it('labels points from their own label, one line each', async () => {
+    const chart = {
+      type: 'bar',
+      data: {
+        labels: ['Янв', 'Фев', 'Мар'],
+        datasets: [
+          {
+            label: 'Доля',
+            data: [
+              { x: 'Янв', y: 12, label: '12%' },
+              { x: 'Фев', y: 30, label: '30%' },
+              { x: 'Мар', y: 21, label: ['21%', 'рекорд'] },
+            ],
+          },
+        ],
+      },
+      options: { plugins: { datalabels: { display: true, anchor: 'end', align: 'top' } } },
+    };
+    const buf = await renderChartJs(400, 300, 'white', 1.0, undefined, 'png', chart);
+    assert(buf.length > 0);
+    // The rows reach the formatter as sent.
+    assert.deepStrictEqual(chart.data.datasets[0].data[2].label, ['21%', 'рекорд']);
+  });
+
+  it('refuses a quoted formatter through a full render', async () => {
     const chart = {
       type: 'line',
       data: {
@@ -421,12 +480,13 @@ describe('labelled charts render', () => {
         plugins: { datalabels: { formatter: 'function(value) { return value.y + " шт"; }' } },
       },
     };
-    const buf = await renderChartJs(400, 300, 'white', 1.0, undefined, 'png', chart);
-    assert(buf.length > 0);
-    // renderChartJs mutates its input: the string became a callable.
-    const { formatter } = chart.options.plugins.datalabels;
-    assert.strictEqual(typeof formatter, 'function');
-    assert.strictEqual(formatter({ y: 14 }), '14 шт');
+    await assert.rejects(
+      () => renderChartJs(400, 300, 'white', 1.0, undefined, 'png', chart),
+      (err) =>
+        err instanceof ChartInputError &&
+        err.statusCode === 400 &&
+        err.message.includes('options.plugins.datalabels.formatter'),
+    );
   });
 
   it('keeps datalabels off by default for geo charts', async () => {
@@ -448,7 +508,7 @@ describe('labelled charts render', () => {
   });
 
   it('does not walk data rows or inline map geometry', () => {
-    // Marks the arrays the walk must skip with a string it would compile if it
+    // Marks the arrays the walk must skip with a string it would refuse if it
     // did descend into them - an inline world outline is ~4000 coordinate rings
     // and every row of it is caller data, not options.
     const outline = getMap('world').features.map((feature) => ({
@@ -462,12 +522,7 @@ describe('labelled charts render', () => {
         datasets: [{ outline, data: [{ feature: 'France', formatter: '() => 1', value: 1 }] }],
       },
     };
-    compileFunctionStrings(chart);
-
-    const [dataset] = chart.data.datasets;
-    assert.strictEqual(typeof dataset.outline[0].properties.callback, 'string');
-    assert.strictEqual(typeof dataset.data[0].formatter, 'string');
-    assert.strictEqual(chart.data.labels[0], 'function() {}');
+    assert.doesNotThrow(() => rejectFunctionStrings(chart));
   });
 });
 

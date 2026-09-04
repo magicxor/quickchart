@@ -413,18 +413,8 @@ app.get('/healthcheck/chart', (req, res) => {
   // A heavier healthcheck endpoint that redirects to a unique chart.
   const labels = [...Array(5)].map(() => Math.random());
   const data = [...Array(5)].map(() => Math.random());
-  const template = `
-{
-  type: 'bar',
-  data: {
-    labels: [${labels.join(',')}],
-    datasets: [{
-      data: [${data.join(',')}]
-    }]
-  }
-}
-`;
-  res.redirect(`/chart?c=${template}`);
+  const chart = { type: 'bar', data: { labels, datasets: [{ data }] } };
+  res.redirect(`/chart?c=${encodeURIComponent(JSON.stringify(chart))}`);
 });
 
 const port = process.env.PORT || 3400;
