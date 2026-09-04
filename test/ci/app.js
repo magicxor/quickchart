@@ -7,7 +7,7 @@ const { imageSize } = require('image-size');
 const request = require('supertest');
 
 const app = require('../../index');
-const { BASIC_CHART, JS_CHART } = require('./chart_helpers');
+const { BASIC_CHART, ADVANCED_CHART } = require('./chart_helpers');
 const { assertSimilarRgb } = require('./color_helpers');
 const { getQrValue } = require('./qr_helpers');
 const { PLUGIN_CONFIGS } = require('../fixtures/chart_configs');
@@ -69,9 +69,9 @@ describe('chart request', () => {
     assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
   });
 
-  it('returns an JS chart via GET', async () => {
+  it('returns an advanced chart via GET', async () => {
     const res = await request(app)
-      .get(`/chart?c=${encodeURIComponent(JS_CHART)}`)
+      .get(`/chart?c=${encodeURIComponent(JSON.stringify(ADVANCED_CHART))}`)
       .expect('Content-Type', 'image/png')
       .expect(200);
     assertDimensions(res, AUTO_LANDSCAPE_WIDTH, AUTO_LANDSCAPE_HEIGHT);
@@ -117,7 +117,7 @@ describe('chart request', () => {
     const res = await request(app)
       .post('/chart')
       .send({
-        chart: JS_CHART,
+        chart: ADVANCED_CHART,
       })
       .expect('Content-Type', 'image/png')
       .expect(200);
@@ -125,10 +125,11 @@ describe('chart request', () => {
   });
 
   it('returns an advanced chart via POST with parameters', async () => {
+    // The config as a JSON string in the body field, the other form a POST takes.
     const res = await request(app)
       .post('/chart')
       .send({
-        chart: JS_CHART,
+        chart: JSON.stringify(ADVANCED_CHART),
         width: 456,
         height: 123,
         devicePixelRatio: 1.0,
@@ -144,7 +145,7 @@ describe('chart request', () => {
     const res = await request(app)
       .post('/chart')
       .send({
-        chart: Buffer.from(JS_CHART).toString('base64'),
+        chart: Buffer.from(JSON.stringify(ADVANCED_CHART)).toString('base64'),
         width: 369,
         height: 150,
         devicePixelRatio: 1.0,
@@ -215,6 +216,33 @@ describe('api error handling and headers', () => {
       .expect('Content-Type', 'image/png')
       .expect(400);
     assert(res.headers['x-quickchart-error'].includes('Invalid input'));
+  });
+
+  it('returns 400 for a config written as a Javascript object literal', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: "{ type: 'bar', data: { labels: ['a'], datasets: [{ data: [1] }] } }",
+      })
+      .expect('Content-Type', 'image/png')
+      .expect(400);
+    assert(res.headers['x-quickchart-error'].includes('not valid JSON'));
+  });
+
+  it('returns 400 for a function quoted into an option', async () => {
+    const res = await request(app)
+      .post('/chart')
+      .send({
+        chart: {
+          ...BASIC_CHART,
+          options: { plugins: { datalabels: { formatter: 'function(v) { return v.y; }' } } },
+        },
+      })
+      .expect('Content-Type', 'image/png')
+      .expect(400);
+    const error = res.headers['x-quickchart-error'];
+    assert(error.includes('options.plugins.datalabels.formatter'), error);
+    assert(error.includes('does not execute'), error);
   });
 
   it('returns 400 for out-of-range dimensions', async () => {

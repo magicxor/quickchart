@@ -35,7 +35,7 @@ A chart is defined completely by its URL or by the JSON body of a `POST /chart` 
 
 | Parameter | Alias | Description |
 |---|---|---|
-| `chart` | `c` | Chart.js 4 config, as JSON or a Javascript object literal (required) |
+| `chart` | `c` | Chart.js 4 config, as JSON (required) |
 | `width` | `w` | Image width in logical pixels — omit to derive it, see [Canvas size](#canvas-size) |
 | `height` | `h` | Image height in logical pixels — omit to derive it, see [Canvas size](#canvas-size) |
 | `backgroundColor` | `bkg` | Canvas background color (default transparent) |
@@ -63,29 +63,30 @@ The chart configuration object is based on the popular Chart.js API.  Check out 
 
 Give one side and the other follows from the same ratio (`width=800` on a Russia map renders 800×472).  Give both and they are used as-is, with no measuring done at all.  Give neither and the longest side is 1280 — `CHART_DEFAULT_SIZE` — with the other derived.  Sizes are bounded by `CHART_MAX_WIDTH`/`CHART_MAX_HEIGHT`: a maximum below what a derived canvas would be shrinks it along its ratio, and a side derived from one you gave is clamped rather than failing.
 
-One caveat for Javascript configs: `getGradientFill`/`getGradientFillHelper` build their gradients across the canvas, so a config that calls either of them **and** leaves a dimension open is evaluated a second time once the canvas is known.  Configs that do not use those helpers are evaluated once, whether or not a dimension was derived.
-
 ### Callbacks and scriptable options
 
-Many Chart.js options take a function — the datalabels `formatter`, `ticks.callback`, the tooltip callbacks, scriptable colors — and strict JSON cannot hold one.  Either send the config as a Javascript object literal and write the function directly, or **quote its source** and the server compiles it before rendering:
+The config is data: the server executes no Javascript from a request.  Many Chart.js options take a function — the datalabels `formatter`, `ticks.callback`, the tooltip callbacks, scriptable colors — and a config that quotes one as a string (`"formatter": "function(v) { return v.y; }"`) is refused with a **400** naming the option, since Chart.js would otherwise read the string as text and misrender without a word.  Only the option names that take a function are checked, and only where they do — a dataset labelled `"x => y"` stays a legend entry — and dataset data and category labels are not inspected at all.
+
+What the callbacks are usually written for is available as plain values:
 
 ```jsonc
 {
+  "data": {
+    "datasets": [{
+      // per-point colors: an array in place of a scriptable color
+      "backgroundColor": ["#2ecc71", "#e74c3c"],
+      // per-point label text: a row's `label`, an array for several lines
+      "data": [{ "x": "Jan", "y": 12, "label": "12%" }, { "x": "Feb", "y": 30, "label": ["30%", "record"] }]
+    }]
+  },
   "options": {
-    "plugins": {
-      "datalabels": {
-        "formatter": "function(value) { return value.y + ' units'; }",
-        "display": "(ctx) => ctx.dataIndex !== 1"
-      }
-    },
-    "scales": { "y": { "ticks": { "callback": "(v) => '$' + v" } } }
+    // tick text: Intl.NumberFormat options, with the chart's `locale`
+    "scales": { "y": { "ticks": { "format": { "style": "percent", "maximumFractionDigits": 0 } } } },
+    // labels that would overlap one already drawn are hidden
+    "plugins": { "datalabels": { "display": "auto" } }
   }
 }
 ```
-
-Quoted sources are recognized under the option names that Chart.js and its plugins accept a function for (`formatter`, `display`, `callback`, `filter`, the `tooltip.callbacks.*` names, scriptable colors and point styles, …), and only when the string really is a function expression or arrow function.  Names that are a function in one place and text in another — `label`, `title`, `footer`, an annotation's `content`/`value` — are compiled only where Chart.js takes a function, so a dataset labelled `"x => y"` stays a legend entry.  Dataset data and category labels are not inspected at all.  A quoted source that does not parse, or that turns out to be a *call* rather than a function (`"function(v) { … }()"`), fails with a **400** naming the option instead of being drawn as a label.
-
-A compiled source runs like any other Javascript in a config.  A config sent as a string has always been evaluated in full, so the service's trust model is unchanged — but note that a JSON body is no longer inert either: a callback quoted inside one executes just the same, and the same sandboxing applies.  See [Securing your self-hosted instance](#securing-your-self-hosted-instance).
 
 ### Data labels
 
@@ -101,9 +102,9 @@ A compiled source runs like any other Javascript in a config.  A config sent as 
 | choropleth `{ feature, value }` | the feature's name and the value, on two lines |
 | bubbleMap `{ longitude, latitude, value }` | the value, or `label` above it when the row has one |
 
-A funnel labels its stages this way rather than as chartjs-chart-funnel does, which reads every value as a fraction of 1 and prints an absolute count of 600 as "60,000%".
+A row's `label` is whatever text the row should carry: a string, or an array of strings for one line each — `{ "x": "Mar", "y": 21, "label": ["21%", "record"] }` prints two lines, and on a map the value goes under the last of them.
 
-A `formatter` of your own overrides all of it; return an array of strings for a multi-line label.
+A funnel labels its stages this way rather than as chartjs-chart-funnel does, which reads every value as a fraction of 1 and prints an absolute count of 600 as "60,000%".
 
 Options can also be set per dataset, as `dataset.datalabels`.  To switch labels off for one dataset write `"datalabels": { "display": false }` — a bare `"datalabels": false` there is refused with a 400, because chartjs-plugin-datalabels cannot render it (its own code reads that value as "no labels at all for this dataset" and then fails on the null it made for it).
 
@@ -175,7 +176,7 @@ How references are resolved:
 
 - A string `outline` resolves to the named map's features. If only `map` is given, it doubles as the outline.
 - Choropleth `data[].feature` strings are matched against the `map` (or `outline`) map's features: first by `properties.name`, then by `id`, case-insensitive.  Feature ids are ISO 3166-1 numeric codes for `world*`, FIPS codes for `us*`, and datamaps subunit codes (e.g. `DE.BE`) for `<iso3>` maps.  Names must match the source data (English short names) — `GET /maps?name=<map>` lists every matchable feature.
-- A data row may carry a `label` next to `feature`/`value`.  It is what [data labels](#data-labels) print for that region, which is how regions get names the map data does not have — its own spelling, a local language, an abbreviation.  `{ "feature": "Minsk", "label": "Минская", "value": 1471 }` with `"datalabels": { "display": true }` writes "Минская" over "1471" on the region.
+- A data row may carry a `label` next to `feature`/`value`.  It is what [data labels](#data-labels) print for that region, which is how regions get names the map data does not have — its own spelling, a local language, an abbreviation.  `{ "feature": "Minsk", "label": "Минская", "value": 1471 }` with `"datalabels": { "display": true }` writes "Минская" over "1471" on the region, and a `label` that is an array of strings writes one line each.
 - A region's label is written on the largest single piece of it that the view actually shows, rather than at the centre of its whole territory — which is where chartjs-chart-geo puts it, and which is frequently not on the region at all.  Two ways that goes wrong, both fixed here: France's world-atlas feature reaches South America through French Guiana, and averaging that in lands "France" out in the Atlantic, off the north-west corner of Spain; and a country the view cuts in half — Russia on a map framed on Europe — is centred somewhere past the edge of the image, so its label is drawn off-canvas and never appears.  Note that a label still has to fit: use `"datalabels": { "display": "auto" }` to have the ones that would overlap hidden instead.
 - Where that centre lands off the region even so, the label goes to the point with the most room around it instead.  A shape can curl around its own middle — Croatia's centre of area is in Bosnia, Vietnam's is in Laos — or enclose a hole it is not part of, which is how a US county that surrounds an independent city ends up labelled over the city.  Both are asking the shape the wrong question: the label needs room, not a middle, so it is placed at the interior point furthest from any edge (a "pole of inaccessibility"), measured on the part of the region in view.  A region whose centre of area *is* on it keeps that centre, so this changes nothing for the great majority of them.
 - A data row may also carry a `center` — `{ "longitude": …, "latitude": … }` — and that is the point its label is anchored to, instead of the one the server derives from the region's shape.  Reach for it when you want a specific spot rather than a computed one: a capital, the mainland of a country whose largest visible piece is an island, a corner of a region that the rest of the map leaves free.  `{ "feature": "Norway", "value": 5, "center": { "longitude": 8.5, "latitude": 60.5 } }` writes "Norway" over the southern bulk of the country rather than where its own geometry works out widest.
@@ -258,22 +259,6 @@ A world choropleth cropped to Europe:
 ```
 
 When `fit` is given and the projection is left on `auto`, the projection is aimed at the **fit region** rather than at the whole outline — cropping a world map to the Russian Far East frames it and rotates the globe to face it.  If you name a projection yourself, aim it yourself too: `fit` only frames, and a region crossing the antimeridian is cut in half by an unrotated projection's own seam.
-
-JS configs can access the same registry via `getMap(name)`, which returns `{ features, topology }` (alongside the existing `topojson` helper):
-
-```js
-{
-  type: 'choropleth',
-  data: {
-    labels: getMap('us-states').features.map((f) => f.properties.name),
-    datasets: [{
-      outline: getMap('us-states').features,
-      data: getMap('us-states').features.map((f) => ({ feature: f, value: Math.random() * 100 }))
-    }]
-  },
-  options: { scales: { projection: { axis: 'x', projection: 'albersUsa' }, color: { axis: 'x' } } }
-}
-```
 
 Discovery: `GET /maps` returns all available map names and sources as JSON.  `GET /maps?name=<map>` additionally returns the map's `features` (name/id pairs), its `bbox` (`[west, south, east, north]`) and `centroid`, and the `projection` spec that `auto` would pick for it:
 
@@ -384,7 +369,7 @@ By following the **Docker** instructions above, you can deploy the service to an
 
 ## Securing your self-hosted instance
 
-This server assumes all Javascript sent in the config object is friendly.  If you are hosting QuickChart yourself, take care not to expose the service to untrusted parties.  Because Chart.js configs may contain arbitrary Javascript, it is necessary to properly sandbox your QuickChart instance if you are exposing it to the outside world.
+A chart config is parsed as JSON and nothing in it is executed: a function quoted into an option is refused with a 400 (see [Callbacks and scriptable options](#callbacks-and-scriptable-options)).  An exposed instance needs the usual protections: `RATE_LIMIT_PER_MIN` behind a correctly set `TRUST_PROXY`, the size and body limits at their defaults, and a reverse proxy in front.
 
 ## Health and Monitoring
 
@@ -403,7 +388,8 @@ This fork diverges from [typpo/quickchart](https://github.com/typpo/quickchart):
 - **Geo charts get bundled maps and aimable projections** — see [Geo charts and built-in maps](#geo-charts-and-built-in-maps).  Projections can be rotated/centered from plain JSON, are aimed automatically for built-in maps, the view can be framed on an arbitrary region, and region labels are anchored on the part of a region the view shows — falling back to the point with the most room around it for a shape whose centre of area is not on it — instead of on the centre of its whole territory.
 - **Google Image Charts compatibility removed** (`/gchart` and `cht=` parameters).
 - **Graphviz rendering removed.**
-- **Callbacks may be quoted in a JSON config** and are compiled instead of silently ignored, and the datalabels default label understands geo and `{x, y}` data instead of stringifying it — see [Callbacks and scriptable options](#callbacks-and-scriptable-options) and [Data labels](#data-labels).
+- **Configs are JSON, never Javascript.** Nothing in a request is executed; a function quoted into an option is refused with a 400 — see [Callbacks and scriptable options](#callbacks-and-scriptable-options).
+- **The datalabels default label understands geo and `{x, y}` data** instead of stringifying it, and prints a row's own `label` — a string or an array of lines — see [Data labels](#data-labels).
 - **Labels that reach outside the plot area get room reserved for them** instead of being clipped at the plot edge or drawn over the title — see [Room for labels outside the plot area](#room-for-labels-outside-the-plot-area).
 - **`width`/`height` are optional** and derived from the chart when omitted, rather than defaulting to a fixed 500×300 — see [Canvas size](#canvas-size).
 - **Client errors return 400** (upstream returns 500 for everything); `X-quickchart-error` is always populated on failures.

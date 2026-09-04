@@ -81,7 +81,7 @@ describe('charts.js', () => {
     assert.equal(100 * 2, dimensions.height);
   });
 
-  it('renders a JS chart', async () => {
+  it('renders a chart sent as a JSON string', async () => {
     const buf = await chartsLib.renderChartJs(
       200,
       100,
@@ -89,34 +89,9 @@ describe('charts.js', () => {
       2.0,
       undefined,
       'png',
-      charts.JS_CHART,
+      JSON.stringify(charts.ADVANCED_CHART),
     );
     assert(buf.length > 0);
-  });
-
-  it('renders a chart with gradient fill', async () => {
-    const buf = await chartsLib.renderChartJs(
-      300,
-      200,
-      'transparent',
-      2.0,
-      undefined,
-      'png',
-      charts.CHART_GRADIENT_FILL,
-    );
-    // Palette order from color quantization is environment-sensitive; assert
-    // that a gradient midtone appears anywhere in the palette.
-    const colors = (await getColors(buf, 'image/png')).map((color) => color.rgb());
-    const expected = [172, 58, 199];
-    assert(
-      colors.some(
-        (rgb) =>
-          Math.abs(rgb[0] - expected[0]) < 40 &&
-          Math.abs(rgb[1] - expected[1]) < 40 &&
-          Math.abs(rgb[2] - expected[2]) < 40,
-      ),
-      `expected a color similar to ${expected} in ${JSON.stringify(colors)}`,
-    );
   });
 
   it('renders a violin chart', async () => {

@@ -1,10 +1,10 @@
-const javascriptStringify = require('javascript-stringify').stringify;
-
 const { BASIC_CONFIGS, PLUGIN_CONFIGS } = require('../fixtures/chart_configs');
 
 const BASIC_CHART = BASIC_CONFIGS.bar;
 
-const JS_CHART = javascriptStringify({
+// Everything a plain JSON config can carry: a styled title, a legend, data
+// labels, stacked scales and Intl-formatted ticks.
+const ADVANCED_CHART = {
   type: 'bar',
   data: {
     labels: ['January', 'February', 'March', 'April', 'May'],
@@ -44,26 +44,12 @@ const JS_CHART = javascriptStringify({
       y: {
         stacked: true,
         ticks: {
-          callback: function (value) {
-            return '$' + value;
-          },
+          format: { style: 'currency', currency: 'USD', maximumFractionDigits: 0 },
         },
       },
     },
   },
-});
-
-const CHART_GRADIENT_FILL = `{
-  type: 'bar',
-  data: {
-    labels: [2012, 2013, 2014, 2015, 2016],
-    datasets: [{
-      label: 'abc',
-      data: [12, 6, 5, 18, 12],
-      backgroundColor: getGradientFillHelper('vertical', ["#36a2eb", "#a336eb", "#eb3639"]),
-    }]
-  }
-}`;
+};
 
 const CHART_VIOLIN = {
   type: 'violin',
@@ -158,8 +144,7 @@ module.exports = {
   BASIC_CHART,
   BASIC_CONFIGS,
   PLUGIN_CONFIGS,
-  JS_CHART,
-  CHART_GRADIENT_FILL,
+  ADVANCED_CHART,
   CHART_VIOLIN,
   CHART_PROGRESSBAR,
   DATETIME_CHART,
